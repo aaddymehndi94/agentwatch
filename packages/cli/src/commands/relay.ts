@@ -27,13 +27,22 @@ function findRepo(): { relayDir: string; appDir: string } | null {
   return null
 }
 
-function wranglerBin(relayDir: string): string | null {
+/**
+ * A package's command-line script, found through its package.json `bin`: packages like wrangler 4 don't export their
+ * bin files, so `require.resolve('wrangler/bin/wrangler.js')` fails even when wrangler is installed.
+ */
+export function packageBin(fromDir: string, pkg: string, name = pkg): string | null {
   try {
-    return createRequire(path.join(relayDir, 'package.json')).resolve('wrangler/bin/wrangler.js')
+    const manifest = createRequire(path.join(fromDir, 'package.json')).resolve(`${pkg}/package.json`)
+    const { bin } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as { bin?: string | Record<string, string> }
+    const rel = typeof bin === 'string' ? bin : bin?.[name]
+    return rel ? path.join(path.dirname(manifest), rel) : null
   } catch {
     return null
   }
 }
+
+const wranglerBin = (relayDir: string) => packageBin(relayDir, 'wrangler')
 
 /** Run wrangler, echoing its output, and return what it printed. */
 function wrangler(bin: string, cwd: string, args: string[], input?: string): Promise<{ code: number; out: string }> {
@@ -75,7 +84,11 @@ export async function relay(argv: string[]): Promise<number> {
   }
   if (!fs.existsSync(path.join(repo.appDir, 'dist', 'index.html'))) {
     console.log('Building the phone app…')
-    const vite = createRequire(path.join(repo.appDir, 'package.json')).resolve('vite/bin/vite.js')
+    const vite = packageBin(repo.appDir, 'vite')
+    if (!vite) {
+      console.error('vite is not installed in the repo. Run `pnpm install` first.')
+      return 1
+    }
     const b = spawnSync(process.execPath, [vite, 'build'], { cwd: repo.appDir, stdio: 'inherit' })
     if (b.status !== 0) return 1
   }
