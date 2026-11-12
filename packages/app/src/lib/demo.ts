@@ -1,0 +1,149 @@
+// `?demo` mode: a believable, clearly synthetic workload for trying the app and for screenshots. No relay needed.
+
+import type { SourceView } from '@agentwatch/protocol'
+import type { EventVM, Model, RequestVM, SessionVM } from './model.ts'
+
+const min = 60_000
+
+export function demoModel(now = Date.now()): Model {
+  const sources: SourceView[] = [
+    src('laptop-a', 'dev', 'laptop', 'full', true),
+    src('laptop-b', 'dev-work', 'laptop', 'summary', true),
+    src('server', 'ci', 'build-box', 'full', false, now - 40 * min),
+  ]
+  const sessions: SessionVM[] = [
+    sess('laptop-a', 's1', 'claude', 'needs_you', now - 4 * min, {
+      project: 'api-server',
+      title: 'Migrate the billing webhooks to the queue',
+      snippet: 'Running the migration against the local database before touching the handlers.',
+      cwd: '/home/dev/src/api-server',
+    }),
+    sess('laptop-a', 's2', 'codex', 'needs_you', now - 41 * min, {
+      project: 'mobile-app',
+      title: 'Release notes for 3.8',
+      snippet: 'Drafted the notes from the merged PRs; two items need a decision.',
+    }),
+    sess('laptop-a', 's3', 'claude', 'working', now - 7 * min, {
+      project: 'design-tokens',
+      title: 'Generate the dark palette',
+      snippet: 'Checking contrast for every text/background pair.',
+    }),
+    sess('laptop-a', 's4', 'claude', 'idle', now - 23 * min, {
+      project: 'agentwatch',
+      title: 'Write the README',
+      snippet:
+        'Done. The README now covers deploy, setup, pairing and the security model, with a troubleshooting section.',
+    }),
+    sess('laptop-b', 's5', 'claude', 'working', now - 2 * min, { project: 'payments-core' }),
+    sess('laptop-b', 's6', 'claude', 'idle', now - 3 * 3600_000, { project: 'infra' }),
+    sess('server', 's7', 'generic', 'idle', now - 50 * min, {
+      project: 'nightly-deploy',
+      snippet: 'Staging deploy finished. Waiting for the next schedule.',
+    }),
+    sess('laptop-a', 's8', 'claude', 'ended', now - 5 * 3600_000, { project: 'scratch' }),
+  ]
+  for (const s of sessions) if (s.id === 's4') s.caps = { reply: true }
+  const requests: RequestVM[] = [
+    {
+      sourceId: 'laptop-a',
+      id: 'r2',
+      sessionId: 's2',
+      kind: 'question',
+      createdAt: now - 41 * min,
+      status: 'open',
+      closedAt: null,
+      answerable: true,
+      seq: 1,
+      info: {
+        title: 'Question',
+        tool: 'AskUserQuestion',
+        questions: [
+          {
+            question: 'Should the release notes mention the offline-mode beta?',
+            header: 'Beta',
+            multiSelect: false,
+            options: [
+              { label: 'Mention it', description: 'One line under “Coming soon”' },
+              { label: 'Leave it out', description: 'Ship notes without the beta' },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      sourceId: 'laptop-a',
+      id: 'r1',
+      sessionId: 's1',
+      kind: 'permission',
+      createdAt: now - 4 * min - 12_000,
+      status: 'open',
+      closedAt: null,
+      answerable: true,
+      seq: 2,
+      info: {
+        title: 'Use Bash',
+        tool: 'Bash',
+        detail: 'pnpm --filter api-server db:migrate --env local && pnpm --filter api-server test webhooks',
+      },
+    },
+  ]
+  return { serverTime: now, skew: 0, mute: null, sources, sessions, requests }
+}
+
+export function demoEvents(now = Date.now()): EventVM[] {
+  return [
+    { at: now - 4 * min, kind: 'needs_you', text: 'pnpm --filter api-server db:migrate --env local' },
+    { at: now - 9 * min, kind: 'answered', text: 'Approved from phone' },
+    { at: now - 10 * min, kind: 'needs_you', text: 'Edit src/webhooks/billing.ts' },
+    {
+      at: now - 18 * min,
+      kind: 'prompted',
+      text: 'Move the billing webhooks onto the job queue and keep retries idempotent.',
+    },
+    { at: now - 64 * min, kind: 'done', text: 'Added the queue consumer and a retry test.' },
+  ]
+}
+
+function src(
+  id: string,
+  user: string,
+  host: string,
+  privacy: 'full' | 'summary',
+  online: boolean,
+  lastSeen = Date.now(),
+): SourceView {
+  return {
+    id,
+    user,
+    host,
+    privacy,
+    allowMessages: privacy === 'full',
+    online,
+    lastSeen,
+    daemonVersion: '0.1.0',
+    adapters: { claude: 'claude 2.1.322' },
+  }
+}
+
+function sess(
+  sourceId: string,
+  id: string,
+  agent: SessionVM['agent'],
+  state: SessionVM['state'],
+  since: number,
+  info: SessionVM['info'],
+): SessionVM {
+  return {
+    key: `${sourceId}/${id}`,
+    sourceId,
+    id,
+    agent,
+    state,
+    stateSince: since,
+    startedAt: since - 30 * min,
+    turnStartedAt: state === 'working' || state === 'needs_you' ? since : null,
+    updatedAt: since,
+    caps: { reply: false, replyReason: 'You can reply when the agent is idle' },
+    info,
+  }
+}

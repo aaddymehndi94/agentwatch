@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] pnpm workspace with protocol / relay / app / cli and the claude-code plugin; Node 24 `.nvmrc`; biome; vitest; typecheck passes
-- [ ] protocol: wire schemas (v1), session state machine for the Claude events, seal/open with associated data, ids, base64url (unit tests: round trip, tamper, wrong associated data)
-- [ ] relay: `/api/claim` (CLAIM_SECRET) → source token; source WebSocket (hibernating) accepts hello/snapshot/session.upsert/event; `/api/state` for a device token; SQLite migrations
-- [ ] cli: `daemon` (unix socket 0700, lock, on-demand spawn), `hook claude` (1 s budget, fail-open, no stdout), relay link with reconnect + snapshot
-- [ ] Claude adapter maps SessionStart/UserPromptSubmit/Stop/SessionEnd to state + snippet, using recorded fixtures
-- [ ] app: lists sessions grouped by host/user from `/api/state`, decrypting with the vault key
-- [ ] E2E harness test: fixtures → daemon → relay (workerd) → fake device sees an idle session with snippet "PONG"
-- [ ] With the daemon down, the hook exits 0 in < 1.2 s with no stdout
+- [x] pnpm workspace with protocol / relay / app / cli and the claude-code plugin; Node 24 `.nvmrc`; biome; vitest; typecheck passes
+- [x] protocol: wire schemas (v1), session state machine for the Claude events, seal/open with associated data, ids, base64url (unit tests: round trip, tamper, wrong associated data)
+- [x] relay: `/api/claim` (CLAIM_SECRET) → source token; source WebSocket (hibernating) accepts hello/snapshot/session.upsert/event; `/api/state` for a device token; SQLite migrations
+- [x] cli: `daemon` (unix socket 0700, lock, on-demand spawn), `hook claude` (1 s budget, fail-open, no stdout), relay link with reconnect + snapshot
+- [x] Claude adapter maps SessionStart/UserPromptSubmit/Stop/SessionEnd to state + snippet, using recorded fixtures
+- [x] app: lists sessions grouped by host/user from `/api/state`, decrypting with the vault key
+- [x] E2E harness test: fixtures → daemon → relay (workerd) → fake device sees an idle session with snippet "PONG"
+- [x] With the daemon down, the hook exits 0 in < 1.2 s with no stdout

@@ -2,7 +2,6 @@
 // Clear fields are ids, kinds, states and timestamps only. Everything a human wrote or would read is `sealed`.
 
 import { z } from 'zod'
-import type { Binding } from './crypto.ts'
 
 export const AgentKind = z.enum(['claude', 'codex', 'generic'])
 export type AgentKind = z.infer<typeof AgentKind>
@@ -244,33 +243,5 @@ export const PushPayload = z.object({
 })
 export type PushPayload = z.infer<typeof PushPayload>
 
-// ── Bindings: what each sealed blob is tied to ─────────────────────────────────────────────────────────────────────
-
-export const bind = {
-  session: (sourceId: string, sessionId: string): Binding => ({ kind: 'session', sourceId, sessionId }),
-  request: (sourceId: string, sessionId: string, requestId: string): Binding => ({
-    kind: 'request',
-    sourceId,
-    sessionId,
-    requestId,
-  }),
-  event: (sourceId: string, e: { sessionId: string; at: number; kind: string }): Binding => ({
-    kind: 'event',
-    sourceId,
-    sessionId: e.sessionId,
-    at: e.at,
-    ek: e.kind,
-  }),
-  push: (sourceId: string, tag: string): Binding => ({ kind: 'push', sourceId, tag }),
-  command: (c: Omit<CommandEnvelope, 'sealed'>): Binding => ({
-    kind: 'command',
-    commandId: c.commandId,
-    deviceId: c.deviceId,
-    sourceId: c.sourceId,
-    sessionId: c.sessionId,
-    requestId: c.requestId,
-    ck: c.kind,
-    ts: c.ts,
-    nonce: c.nonce,
-  }),
-}
+// Bindings live in bind.ts (zod-free, shared with the app and service worker).
+export { bind } from './bind.ts'

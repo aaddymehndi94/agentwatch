@@ -26,8 +26,17 @@ export const RELAY_DIR = path.resolve(CLI_DIR, '../relay')
 export const BIN = path.join(CLI_DIR, 'dist/agentwatch.mjs')
 export const HOOK = path.join(CLI_DIR, 'dist/hook.mjs')
 
+export const APP_DIR = path.resolve(CLI_DIR, '../app')
+
+/** Bundle the CLI, and build the app once if the relay has nothing to serve yet. */
 export function buildCli(): void {
   execFileSync(process.execPath, ['build.mjs'], { cwd: CLI_DIR, stdio: 'pipe' })
+  if (!fs.existsSync(path.join(APP_DIR, 'dist/index.html'))) {
+    execFileSync(process.execPath, [path.join(APP_DIR, 'node_modules/vite/bin/vite.js'), 'build'], {
+      cwd: APP_DIR,
+      stdio: 'pipe',
+    })
+  }
 }
 
 export interface Relay {
