@@ -1,0 +1,7 @@
+{
+  "name": "agentwatch",
+  "version": "0.1.0",
+  "description": "AgentWatch: get pushed on your phone when Claude needs you or finishes, and answer from there.",
+  "license": "MIT",
+  "keywords": ["notifications", "push", "remote", "approvals", "pager"]
+}

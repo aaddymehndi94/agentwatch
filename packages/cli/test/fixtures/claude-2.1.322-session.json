@@ -1,0 +1,213 @@
+[
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "First use Bash to run exactly: date > s3.txt   Then use AskUserQuestion to ask me \"Ship it?\" with options Yes and No. Then summarize in one sentence."
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_input": {
+   "command": "date > s3.txt",
+   "description": "Write current date to s3.txt"
+  },
+  "permission_suggestions": [
+   {
+    "type": "addDirectories",
+    "directories": [
+     "/home/dev/agentwatch/spikes/claude/work"
+    ],
+    "destination": "session"
+   }
+  ]
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+   "command": "date > s3.txt",
+   "description": "Write current date to s3.txt"
+  },
+  "tool_response": {
+   "stdout": "",
+   "stderr": "",
+   "interrupted": false,
+   "isImage": false,
+   "noOutputExpected": false
+  },
+  "tool_use_id": "toolu_01BvubfZmZvhqzeBf45hqK5v",
+  "duration_ms": 45
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+   "questions": [
+    {
+     "question": "Ship it?",
+     "header": "Ship",
+     "options": [
+      {
+       "label": "Yes",
+       "description": "Ship it"
+      },
+      {
+       "label": "No",
+       "description": "Do not ship"
+      }
+     ],
+     "multiSelect": false
+    }
+   ]
+  },
+  "tool_use_id": "toolu_01MYSLhReQB3oatUebhLU21Y"
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+   "questions": [
+    {
+     "question": "Ship it?",
+     "header": "Ship",
+     "options": [
+      {
+       "label": "Yes",
+       "description": "Ship it"
+      },
+      {
+       "label": "No",
+       "description": "Do not ship"
+      }
+     ],
+     "multiSelect": false
+    }
+   ]
+  }
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+   "questions": [
+    {
+     "question": "Ship it?",
+     "header": "Ship",
+     "options": [
+      {
+       "label": "Yes",
+       "description": "Ship it"
+      },
+      {
+       "label": "No",
+       "description": "Do not ship"
+      }
+     ],
+     "multiSelect": false
+    }
+   ],
+   "answers": {
+    "Ship it?": "No"
+   }
+  },
+  "tool_response": {
+   "questions": [
+    {
+     "question": "Ship it?",
+     "header": "Ship",
+     "options": [
+      {
+       "label": "Yes",
+       "description": "Ship it"
+      },
+      {
+       "label": "No",
+       "description": "Do not ship"
+      }
+     ],
+     "multiSelect": false
+    }
+   ],
+   "answers": {
+    "Ship it?": "No"
+   }
+  },
+  "tool_use_id": "toolu_01MYSLhReQB3oatUebhLU21Y",
+  "duration_ms": 0
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "333cb293-4c60-47cc-b147-8ce52505028d",
+  "permission_mode": "default",
+  "effort": {
+   "level": "medium"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "I wrote the date to s3.txt, and you answered No to \"Ship it?\", so I won't ship anything.",
+  "background_tasks": [],
+  "session_crons": []
+ },
+ {
+  "session_id": "ac6a7836-14c4-4dc6-8634-ccccb0a1e66d",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d.jsonl",
+  "cwd": "/home/dev/agentwatch/spikes/claude/work",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/ac6a7836-14c4-4dc6-8634-ccccb0a1e66d/scratchpad",
+  "prompt_id": "7ca91c9f-e3d6-43ce-989c-d4eec8093163",
+  "hook_event_name": "SessionEnd",
+  "reason": "prompt_input_exit"
+ }
+]

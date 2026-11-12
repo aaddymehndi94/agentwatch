@@ -1,0 +1,18 @@
+{
+  // AgentWatch relay: one Worker + one SQLite-backed Durable Object ("Hub"). Fits the Cloudflare free plan.
+  // Deploy with `agentwatch relay deploy` (or `pnpm --filter @agentwatch/relay deploy`). No account ids live here.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "agentwatch",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "assets": {
+    "directory": "../app/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "observability": { "enabled": false }
+}

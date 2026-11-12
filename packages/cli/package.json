@@ -1,0 +1,33 @@
+{
+  "name": "agentwatch",
+  "version": "0.1.0",
+  "description": "A pager for your coding agents: phone push, overview and replies for Claude Code and Codex, self-hosted on a free Cloudflare account.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agentwatch": "dist/agentwatch.mjs"
+  },
+  "files": [
+    "dist",
+    "plugin",
+    "relay"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@agentwatch/protocol": "workspace:*",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2"
+  }
+}

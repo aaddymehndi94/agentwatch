@@ -1,0 +1,12 @@
+{
+  "name": "agentwatch",
+  "owner": { "name": "AgentWatch contributors" },
+  "description": "AgentWatch: a pager for your coding agents.",
+  "plugins": [
+    {
+      "name": "agentwatch",
+      "source": "./plugins/claude-code",
+      "description": "Push to your phone when Claude needs you or finishes; approve, answer or reply from there."
+    }
+  ]
+}
