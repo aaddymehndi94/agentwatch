@@ -49,7 +49,7 @@ function thread(events: EventVM[], s: SessionVM): Item[] {
         )
         break
       case 'needs_you':
-        items.push({ k: 'sys', at: e.at, icon: 'ask', label: 'Asked for you', text: e.text })
+        items.push({ k: 'sys', at: e.at, icon: 'ask', label: 'Needed you', text: e.text })
         break
       case 'answered':
         items.push({ k: 'sys', at: e.at, icon: 'ok', label: e.text ?? 'Answered' })

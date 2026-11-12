@@ -230,7 +230,7 @@ function Machines({ app, now }: { app: AppState; now: number }) {
               {s.online ? 'Online' : `Offline · last seen ${ago(s.lastSeen, now)} ago`}
             </span>
             <span class="hint">
-              {s.privacy === 'summary' ? 'Summary privacy: no text leaves it' : 'Full detail'}
+              {s.privacy === 'summary' ? 'Private: states only, no text leaves it' : 'Full text'}
               {s.allowMessages ? '' : ' · No replies'}
             </span>
             <span class="hint">

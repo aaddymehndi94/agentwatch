@@ -8,9 +8,9 @@ It runs on your own free Cloudflare account and is end-to-end encrypted, so Clou
 There's no app store app, no third-party push service and no subscription.
 
 <p>
-  <img src="docs/screenshots/inbox-light.png" width="260" alt="Inbox: a Codex question and a Claude approval waiting on the rail, sessions listed below">
-  <img src="docs/screenshots/session-approval-dark.png" width="260" alt="A Claude approval showing the exact command, with Deny and Approve">
-  <img src="docs/screenshots/session-reply-light.png" width="260" alt="An idle session with its last message, timeline and a reply box">
+  <img src="docs/screenshots/inbox-dark.png" width="260" alt="Inbox: a Codex question and a Claude approval waiting as cards, with every session listed below by computer">
+  <img src="docs/screenshots/session-approval-light.png" width="260" alt="A Claude approval in its conversation, showing the exact command with Deny and Approve">
+  <img src="docs/screenshots/session-reply-dark.png" width="260" alt="A finished Claude session: its last message rendered as Markdown with a list, a table and a code block, and a reply box">
 </p>
 
 ## How it works

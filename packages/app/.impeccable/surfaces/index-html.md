@@ -16,7 +16,8 @@ question shown before the decision, never a summary of it.
 
 **Decision round:** the owner rejected the previous "kitchen ticket rail" world as dated ("built in the 80s") and
 pinned the replacement in their own words: "modern, futuristic and perfect", with formatted agent responses. Pinned
-direction beats the roll, so no concept-seed was run; built code-led (Operate surface).
+direction beats the roll: the concept roll dealt for the previous world (seed in FORM) was overridden by the owner's
+pinned words, with no reroll; built code-led (Operate surface).
 
 ## Direction contract
 
@@ -41,6 +42,6 @@ grouped by user@host in inset lists: state orb, project, agent · age, state wor
 FORM: owner-pinned "modern, futuristic"; standing canon at premium-app craft, with two signature moves: the ambient
 sky (top-of-screen light that is cool when calm and warms when anything waits) and the live edge (a slow-turning
 heat-coloured light around each waiting request). State orbs: orbiting arc while working, ping while it needs you.
-seed: none (direction pinned by the owner)
+seed:7abff6d86f882161 (dealt for the previous world; overridden by the owner's pinned direction)
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

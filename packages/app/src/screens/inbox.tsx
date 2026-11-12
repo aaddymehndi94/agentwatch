@@ -39,8 +39,12 @@ export function Inbox({ app, now, go }: { app: AppState; now: number; go: (hash:
       >
         {model && total > 0 && (
           <button type="button" class="pill" onClick={() => go('#/settings')} aria-label="Computers">
-            <span class={`dot ${online === 0 ? 'off' : online < total ? 'part' : ''}`} />
-            {online === total ? `${total} online` : `${online} of ${total} online`}
+            <span class={`dot ${app.error || online === 0 ? 'off' : online < total ? 'part' : ''}`} />
+            {app.error
+              ? `Last known: ${online} of ${total}`
+              : online === total
+                ? `${total} online`
+                : `${online} of ${total} online`}
           </button>
         )}
         <button type="button" class="icon-btn" onClick={() => go('#/settings')} aria-label="Settings">
@@ -170,6 +174,7 @@ function Board({ model, app, now, go }: { model: Model; app: AppState; now: numb
           key={src.id}
           source={src}
           sessions={model.sessions.filter((s) => s.sourceId === src.id)}
+          stale={!!app.error}
           now={t}
           go={go}
         />
@@ -181,11 +186,14 @@ function Board({ model, app, now, go }: { model: Model; app: AppState; now: numb
 function SourceGroup({
   source,
   sessions,
+  stale,
   now,
   go,
 }: {
   source: SourceView
   sessions: SessionVM[]
+  /** The relay can't be reached, so this is only what was last known. */
+  stale: boolean
   now: number
   go: (hash: string) => void
 }) {
@@ -195,14 +203,14 @@ function SourceGroup({
     .sort((a, b) => (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || b.stateSince - a.stateSince)
   const ended = sessions.filter((s) => s.state === 'ended').sort((a, b) => b.stateSince - a.stateSince)
   return (
-    <section aria-label={sourceLabel(source)} class={`group ${source.online ? '' : 'stale'}`}>
+    <section aria-label={sourceLabel(source)} class={`group ${source.online && !stale ? '' : 'stale'}`}>
       <h2 class="group-head">
         <Laptop />
         <span class="who">{sourceLabel(source)}</span>
         <span class="group-meta">
           <span class={`dot ${source.online ? '' : 'off'}`} />
           {source.online ? 'Online' : `Offline ${ago(source.lastSeen, now)}`}
-          {source.privacy === 'summary' ? ' · Summary' : ''}
+          {source.privacy === 'summary' ? ' · Private: states only' : ''}
         </span>
       </h2>
       {!source.online && live.length > 0 && <p class="group-note">Showing what it last reported.</p>}
@@ -254,7 +262,12 @@ function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => 
             <span class="state-word" data-state={s.state}>
               {STATE_LABEL[s.state]}
             </span>
-            {text && <span class="row-snippet"> {text}</span>}
+            {text && (
+              <>
+                <span class="sep" aria-hidden="true" />
+                <span class="row-snippet">{text}</span>
+              </>
+            )}
           </span>
         </span>
         <Chevron />

@@ -137,6 +137,28 @@ export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
       { at: now - 55 * min, kind: 'prompted', text: 'Start by reading the docs folder and listing what is missing.' },
     ]
   }
+  if (sessionId === 's2') {
+    return [
+      { at: now - 41 * min, kind: 'needs_you', text: 'Should the release notes mention the offline-mode beta?' },
+      { at: now - 44 * min, kind: 'prompted', text: 'Draft the 3.8 release notes from the PRs merged since 3.7.' },
+    ]
+  }
+  if (sessionId === 's3') {
+    return [
+      {
+        at: now - 7 * min,
+        kind: 'prompted',
+        text: 'Now generate the dark palette from `tokens/light.json`. Every text and background pair must pass **WCAG AA**.',
+      },
+      {
+        at: now - 26 * min,
+        kind: 'done',
+        text: 'The light palette is in `tokens/light.json`:\n\n- 12 neutrals, from `gray-0` to `gray-11`\n- 5 accents, each with a hover and a muted step',
+      },
+      { at: now - 31 * min, kind: 'prompted', text: 'Start with the light palette, built from the brand blue.' },
+    ]
+  }
+  if (sessionId !== 's1') return []
   return [
     { at: now - 4 * min, kind: 'needs_you', text: 'pnpm --filter api-server db:migrate --env local' },
     { at: now - 9 * min, kind: 'answered', text: 'Approved from phone' },
