@@ -60,6 +60,11 @@ export class RelayLink {
     this.ws?.close(1000, 'daemon stopping')
   }
 
+  /** Tell the relay again who we are (e.g. an adapter learned its agent's version). */
+  resendHello(): void {
+    if (this.open) this.rawSend(this.o.hello())
+  }
+
   /** Reconnect now (e.g. after config change). */
   kick(): void {
     this.ws?.terminate()

@@ -16,6 +16,7 @@ import {
 } from '@agentwatch/protocol'
 import { z } from 'zod'
 import { ClaudeAdapter } from '../adapters/claude.ts'
+import { CodexAdapter } from '../adapters/codex.ts'
 import { type Config, loadConfig } from '../config.ts'
 import { fileLogger, type Logger } from '../log.ts'
 import { type Paths, paths } from '../paths.ts'
@@ -173,6 +174,13 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
   } catch {}
   const claude = new ClaudeAdapter(core, { holdMs: cfg.claude.holdSeconds * 1000, log })
   if (cfg.claude.enabled) core.register(claude)
+  const codex = new CodexAdapter(core, {
+    log,
+    clientVersion: VERSION,
+    holdMs: cfg.claude.holdSeconds * 1000,
+    onDescribe: () => relay?.resendHello(),
+  })
+  if (cfg.codex.enabled) core.register(codex)
 
   relay = new RelayLink({
     relayUrl: cfg.relayUrl,
@@ -321,6 +329,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
   })
   fs.chmodSync(p.socket, 0o600)
   relay.start()
+  if (cfg.codex.enabled) codex.start()
   log('info', 'daemon started', { version: VERSION, pid: process.pid, relay: cfg.relayUrl })
 
   let stopping: Promise<void> | null = null

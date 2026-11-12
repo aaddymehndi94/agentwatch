@@ -142,7 +142,8 @@ export async function finishSetup(
     if (!report.command.onPath) console.log(`    ! ${tilde(path.dirname(report.command.path))} is not on your PATH yet`)
   } else if (report.command.detail) console.log(`! ${report.command.detail}`)
   printClaude(report)
-  if (report.codexVersion) console.log(`· Codex ${report.codexVersion} found (Codex support is on its way)`)
+  if (report.codexVersion)
+    console.log(`✓ Codex ${report.codexVersion}: sessions show up through its app-server, nothing to install`)
   for (const b of report.backups) console.log(`    backed up ${tilde(b)}`)
 
   // Restart the daemon from the installed copy so it runs the new code and config.

@@ -79,6 +79,16 @@ export async function doctor(args: string[]): Promise<number> {
   }
   add('ok', `Relay connected (${new URL(cfg.relayUrl).host})`)
 
+  const st = await call<{ adapters: string[] }>('GET', '/v1/status').catch(() => null)
+  const codex = st?.body.adapters.find((a) => a.startsWith('codex'))
+  if (codex && codex !== 'codex') add('ok', `Connected to the Codex app-server (${codex})`)
+  else if (codex)
+    add(
+      'ok',
+      'Codex app-server not running right now',
+      'It starts with the Codex TUI. Sessions started with -c/--enable run without it and don’t show up.',
+    )
+
   if (args.includes('--test-push')) {
     const r = await call<{ ok: boolean; error?: string }>('POST', '/v1/test-push', {}, { timeoutMs: 20_000 })
     if (r.body.ok) add('ok', 'Test notification sent', 'It should arrive on every paired phone within a few seconds.')
