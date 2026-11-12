@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+coverage/
+# local-only impeccable/claude state
+.claude/settings.local.json
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+.impeccable/review/
+.impeccable/mocks/
+# spikes are throwaway
+spikes/
+.claude/skills/impeccable/scripts/bin/
+.claude/worktrees/
