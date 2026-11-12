@@ -181,7 +181,20 @@ describe('Core', () => {
     expect(await held2).toBe('')
   })
 
-  it('rejects commands for another source, replays and stale timestamps', async () => {
+  it('a command the relay resends gets the same ack and is applied once', async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    const held = claude.onHook(byEvent('PermissionRequest', 0))
+    await core.flushed()
+    const req = of('request.open')[0]!.request
+    const cmd = await command({ kind: 'decide', behavior: 'allow' }, { requestId: req.id })
+    await core.handleCommand(cmd)
+    await core.handleCommand(cmd)
+    expect(of('command.ack').map((a) => a.status)).toEqual(['applied', 'applied'])
+    expect(JSON.parse(await held)).toMatchObject({ hookSpecificOutput: { decision: { behavior: 'allow' } } })
+  })
+
+  it('rejects commands for another source and stale timestamps; a replay changes nothing', async () => {
     const { core, claude } = await makeCore()
     await claude.onHook(byEvent('UserPromptSubmit'))
     const held = claude.onHook(byEvent('PermissionRequest', 0))
@@ -207,8 +220,11 @@ describe('Core', () => {
     const ok = await command({ kind: 'decide', behavior: 'deny', message: 'not now' }, { requestId: req.id })
     await core.handleCommand(ok)
     expect(JSON.parse(await held).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'not now' })
+    // A replay is the identical envelope (the command id is inside the seal's binding): it gets the original ack and
+    // changes nothing.
+    const acks = of('command.ack').length
     await core.handleCommand(ok)
-    expect(of('command.ack').at(-1)).toMatchObject({ status: 'rejected', detail: 'replay' })
+    expect(of('command.ack').slice(acks)).toEqual([{ t: 'command.ack', commandId: ok.commandId, status: 'applied' }])
   })
 
   it('a tampered command is rejected', async () => {

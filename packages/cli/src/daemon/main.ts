@@ -179,7 +179,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
   const codex = new CodexAdapter(core, {
     log,
     clientVersion: VERSION,
-    holdMs: cfg.claude.holdSeconds * 1000,
+    holdMs: cfg.codex.holdSeconds * 1000,
     onDescribe: () => relay?.resendHello(),
   })
   if (cfg.codex.enabled) core.register(codex)

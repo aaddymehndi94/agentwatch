@@ -180,6 +180,18 @@ describe('agentwatch ask', () => {
     expect(of('request.close').map((m) => m.status)).toEqual(['expired', 'cancelled'])
   })
 
+  it('a session that ends while asking cancels the question', async () => {
+    const { core, generic } = await make()
+    generic.emit({ session: 'build', state: 'working' })
+    const pending = generic.ask(
+      { question: 'Retry the flaky test?', session: 'build', multi: false, approve: false, timeoutMs: 60_000 },
+      new AbortController().signal,
+    )
+    generic.emit({ session: 'build', state: 'ended' })
+    expect(await pending).toEqual({ status: 'cancelled' })
+    expect([...core.requests.values()].every((r) => r.status !== 'open')).toBe(true)
+  })
+
   it('refuses under summary privacy rather than showing an empty question', async () => {
     const { generic } = await make({ privacy: 'summary' })
     await expect(

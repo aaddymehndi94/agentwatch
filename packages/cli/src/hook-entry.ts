@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
+import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { paths } from './paths.ts'
@@ -58,6 +59,17 @@ function startDaemon(): void {
   child.unref()
 }
 
+function accepts(socket: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const c = net.connect(socket)
+    c.once('connect', () => {
+      c.destroy()
+      resolve(true)
+    })
+    c.once('error', () => resolve(false))
+  })
+}
+
 async function main(): Promise<void> {
   const agent = process.argv[2] || 'claude'
   const body = await readStdin()
@@ -79,9 +91,10 @@ async function main(): Promise<void> {
       // Not set up for this user: stay out of the way entirely.
       if (attempt === 0 && (code === 'ENOENT' || code === 'ECONNREFUSED') && fs.existsSync(p.configFile)) {
         startDaemon()
-        // Give the fresh daemon up to SPAWN_WAIT_MS to start listening, then try once more.
+        // Give the fresh daemon up to SPAWN_WAIT_MS to start listening, then try once more. Wait for a connection, not
+        // the socket file: a daemon that crashed leaves its file behind.
         const until = Date.now() + SPAWN_WAIT_MS
-        while (Date.now() < until && !fs.existsSync(p.socket)) await new Promise((r) => setTimeout(r, 40))
+        while (Date.now() < until && !(await accepts(p.socket))) await new Promise((r) => setTimeout(r, 40))
         continue
       }
       return

@@ -645,10 +645,14 @@ export class Hub extends DurableObject<Env> {
   private async postCommand(deviceId: string, request: Request): Promise<Response> {
     const env = CommandEnvelope.parse(await request.json())
     if (env.deviceId !== deviceId) return err(403, 'device mismatch')
-    const src = this.sql.exec('SELECT 1 FROM sources WHERE id = ?', env.sourceId).toArray()
-    if (!src.length) return err(404, 'unknown source')
+    const src = this.sql
+      .exec<{ last_seen: number }>('SELECT last_seen FROM sources WHERE id = ?', env.sourceId)
+      .toArray()[0]
+    if (!src) return err(404, 'unknown source')
     const now = Date.now()
-    const ws = this.sourceSocket(env.sourceId)
+    // Only a socket that is still pinging counts: a laptop that slept leaves a half-open one behind for a while, and a
+    // command sent into it would be lost. Queued commands go out when the source reconnects.
+    const ws = this.isOnline(env.sourceId, src.last_seen, now) ? this.sourceSocket(env.sourceId) : undefined
     const status = ws ? 'sent' : 'queued'
     this.sql.exec(
       `INSERT INTO commands (id, device_id, source_id, envelope, status, detail, created_at, updated_at)
@@ -669,7 +673,9 @@ export class Hub extends DurableObject<Env> {
     const now = Date.now()
     const rows = this.sql
       .exec<{ id: string; envelope: string }>(
-        `SELECT id, envelope FROM commands WHERE source_id = ? AND status = 'queued' AND created_at > ? ORDER BY created_at`,
+        // 'sent' without an ack may have died with the old socket. Resending is safe: the daemon answers a repeat with
+        // the ack it already gave.
+        `SELECT id, envelope FROM commands WHERE source_id = ? AND status IN ('queued', 'sent') AND created_at > ? ORDER BY created_at`,
         sourceId,
         now - COMMAND_QUEUE_MS,
       )

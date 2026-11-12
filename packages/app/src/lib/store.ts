@@ -108,25 +108,46 @@ export async function boot(): Promise<void> {
   })
 }
 
+// Refreshes overlap (poll, send, visibility, the service worker): only the newest one may write the model.
+let refreshSeq = 0
+let appliedSeq = 0
+
 export async function refresh(): Promise<void> {
   if (timer) clearTimeout(timer)
   timer = null
   const creds = state.creds
   if (!creds || state.demo) return
+  const seq = ++refreshSeq
   try {
     const raw = await getState(creds.token)
-    await kv.set('state', raw).catch(() => {})
     const model = await decryptState(raw, await vaultKey(creds.vaultKey))
+    if (seq < appliedSeq) return
+    appliedSeq = seq
+    await kv.set('state', raw).catch(() => {})
     set({ model, error: null, lastSync: Date.now(), revoked: false })
     settlePending(model)
+    void closeAnsweredNotifications(model)
   } catch (e) {
+    if (seq < appliedSeq) return
     if (e instanceof ApiError && e.status === 401) set({ revoked: true, error: e.message })
     else set({ error: e instanceof Error ? e.message : String(e) })
   }
   schedule()
 }
 
+/** A "needs you" notification for a request that was answered elsewhere (or timed out) shouldn't linger. */
+async function closeAnsweredNotifications(model: Model): Promise<void> {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration()
+    if (!reg) return
+    const open = new Set(model.requests.filter((r) => r.status === 'open').map((r) => `req:${r.id}`))
+    for (const n of await reg.getNotifications()) if (n.tag.startsWith('req:') && !open.has(n.tag)) n.close()
+  } catch {}
+}
+
 function schedule(): void {
+  if (timer) clearTimeout(timer)
+  timer = null
   if (document.visibilityState !== 'visible') return
   const busy = Object.values(state.pending).some((p) => p.status === 'sending' || p.status === 'sent')
   timer = setTimeout(() => void refresh(), busy ? FAST_POLL_MS : POLL_MS)

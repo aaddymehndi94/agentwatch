@@ -98,6 +98,8 @@ export class Core {
   readonly requests = new Map<string, HeldRequest>()
   readonly adapters = new Map<AgentKind, AgentAdapter>()
   private nonces = new Map<string, number>()
+  /** Acks already given, by command id (null while one is being applied), so a resent command gets the same answer. */
+  private acks = new Map<string, { status: CommandStatus; detail?: string; at: number } | null>()
   private pushTimers = new Map<string, NodeJS.Timeout>()
   private chain: Promise<void> = Promise.resolve()
   private pruneTimer: NodeJS.Timeout
@@ -226,7 +228,19 @@ export class Core {
 
   /** Verify and apply a phone command. Resolves once its ack has been handed to the relay link. */
   async handleCommand(env: CommandEnvelope): Promise<void> {
-    await this.applyCommand(env)
+    const prior = this.acks.get(env.commandId)
+    if (prior === null) return // still being applied; its ack will follow
+    if (prior) {
+      // The relay resends commands whose ack it never saw (a socket died in between). Same answer, applied once.
+      this.ack(env.commandId, prior.status, prior.detail)
+      return this.flushed()
+    }
+    this.acks.set(env.commandId, null)
+    try {
+      await this.applyCommand(env)
+    } finally {
+      if (this.acks.get(env.commandId) === null) this.acks.delete(env.commandId)
+    }
     await this.flushed()
   }
 
@@ -274,6 +288,7 @@ export class Core {
   }
 
   private ack(commandId: string, status: CommandStatus, detail?: string): void {
+    this.acks.set(commandId, { status, ...(detail ? { detail } : {}), at: this.now() })
     this.enqueue(async () => ({
       t: 'command.ack',
       commandId,
@@ -494,6 +509,7 @@ export class Core {
     for (const [id, r] of this.requests)
       if (r.status !== 'open' && r.closedAt && now - r.closedAt > CLOSED_KEEP_MS) this.requests.delete(id)
     for (const [n, at] of this.nonces) if (now - at > NONCE_KEEP_MS) this.nonces.delete(n)
+    for (const [id, a] of this.acks) if (a && now - a.at > NONCE_KEEP_MS) this.acks.delete(id)
   }
 
   /** Release every held request (daemon shutting down). Hooks then fall back to the terminal dialog. */

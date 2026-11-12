@@ -83,7 +83,7 @@ or waiting on you, every phone gets a single "offline" push.
 | `request.close` | `requestId, status, at` | `answered`, `answered_locally`, `expired`, `cancelled` |
 | `push` | `push {tag, kind, urgency, sessionId?, requestId?, actions, sealed}`, optional `rid` | The Hub sends it as Web Push. With a `rid` it acks whether any phone got it. |
 | `mute` | `until` | Owner-wide; `null` clears it |
-| `command.ack` | `commandId, status, detail?` | `applied` or `rejected` (with a reason the phone shows) |
+| `command.ack` | `commandId, status, detail?` | `applied` or `rejected` (with a reason the phone shows). Queued while offline. |
 | `pair.create` | `rid, pairId, kind, wrapped, expiresAt, meta?` | Acked |
 | `rotate` | `rid` | Acked; see Pairing above |
 
@@ -97,8 +97,8 @@ or waiting on you, every phone gets a single "offline" push.
 | `ack` | `rid, ok, error?` |
 | `error` | `error` |
 
-Pushes and timeline events made while the link is down are queued for up to 10 minutes. Everything else is state, and
-the next snapshot carries it.
+Pushes, timeline events and command acks made while the link is down are queued for up to 10 minutes. Everything
+else is state, and the next snapshot carries it.
 
 ## Phone ↔ relay: HTTPS
 
@@ -126,7 +126,9 @@ A command is `{commandId, deviceId, sourceId, sessionId, requestId?, kind, ts, n
 - `answer`: `{answers: {<question>: <label>, …}}`, with several labels joined by `", "`
 - `message`: `{text}`, a reply into an idle session
 
-The relay queues a command for an offline source for 5 minutes. The daemon applies it only if every check passes:
+The relay queues a command for an offline source for 5 minutes. On reconnect it resends both queued commands and sent
+ones that were never acked. The daemon answers a command id it has already seen with the same ack, so a resend is
+never applied twice. It applies a new command only if every check passes:
 
 - the seal opens under the command binding, and the sealed kind matches `kind`;
 - `sourceId` is this source;

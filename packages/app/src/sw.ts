@@ -206,6 +206,20 @@ async function decideFromNotification(p: PushPayload, behavior: 'allow' | 'deny'
         }, 4000)
         return
       }
+      if (c.status === 'rejected' && /already answered|no longer open|timed out/i.test(c.detail ?? '')) {
+        // Too late, not broken: say so quietly, then get out of the way.
+        await self.registration.showNotification('Already settled', {
+          body: `${c.detail}.`,
+          tag: p.tag,
+          silent: true,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/badge-96.png',
+        })
+        setTimeout(async () => {
+          for (const n of await self.registration.getNotifications({ tag: p.tag })) n.close()
+        }, 4000)
+        return
+      }
       if (c.status === 'rejected' || c.status === 'expired') return fail(c.detail ? `${c.detail}.` : 'It was rejected.')
     }
     await fail('Your computer didn’t answer in time.')

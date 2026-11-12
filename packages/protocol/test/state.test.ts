@@ -123,3 +123,15 @@ describe('notify policy', () => {
     ).toBe('Wants to use Bash.')
   })
 })
+
+describe('session state machine: restarts', () => {
+  it('a session restarted while blocked on you stays blocked', () => {
+    let s = newSession('s', 'claude', 0)
+    s = reduce(s, { type: 'session.start', at: 1 }).session
+    s = reduce(s, { type: 'turn.start', at: 2 }).session
+    s = reduce(s, { type: 'request.open', at: 3, requestId: 'r1' }).session
+    s = reduce(s, { type: 'session.start', at: 4 }).session
+    expect(s.state).toBe('needs_you')
+    expect(s.openRequests).toEqual(['r1'])
+  })
+})

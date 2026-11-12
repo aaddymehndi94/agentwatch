@@ -145,9 +145,11 @@ export class GenericAdapter implements AgentAdapter {
         if (a.message) this.core.apply('generic', id, { type: 'info', at, info: { snippet: clip(a.message, 2000) } })
         break
       case 'idle':
+        this.cancelOpen(id)
         this.core.apply('generic', id, { type: 'turn.end', at, ...(a.message ? { message: a.message } : {}) })
         break
       case 'ended':
+        this.cancelOpen(id)
         this.core.apply('generic', id, { type: 'session.end', at })
         this.pids.delete(id)
         break
@@ -201,6 +203,11 @@ export class GenericAdapter implements AgentAdapter {
     }
   }
 
+  /** A session that moved on can't still be asking: its open questions close, and their `ask` returns cancelled. */
+  private cancelOpen(id: string): void {
+    for (const r of this.core.openRequestsOf(id)) this.core.close(r.id, 'cancelled')
+  }
+
   /** End sessions whose process is gone, or that nobody has reported on for a day. */
   sweep(): void {
     const alive = this.o.pidAlive ?? pidAlive
@@ -211,6 +218,7 @@ export class GenericAdapter implements AgentAdapter {
       const gone = pid !== undefined && !alive(pid)
       if (gone || (s.state !== 'needs_you' && now - s.updatedAt > STALE_MS)) {
         this.o.log('info', 'generic session ended', { session: s.id, reason: gone ? 'process exited' : 'stale' })
+        this.cancelOpen(s.id)
         this.core.apply('generic', s.id, { type: 'session.end', at: now })
         this.pids.delete(s.id)
       }

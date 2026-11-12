@@ -26,8 +26,9 @@ export async function ensureVapid(sql: SqlStorage): Promise<Vapid> {
   const raw = new Uint8Array((await crypto.subtle.exportKey('raw', pair.publicKey)) as ArrayBuffer)
   const jwk = (await crypto.subtle.exportKey('jwk', pair.privateKey)) as JsonWebKey
   const vapid: Vapid = { publicKey: toB64u(raw), privateKey: jwk.d! }
-  sql.exec(`INSERT INTO meta (k, v) VALUES ('vapid', ?)`, JSON.stringify(vapid))
-  return vapid
+  // Two first uses can race across the awaits above: the first key written wins, and both callers use it.
+  sql.exec(`INSERT OR IGNORE INTO meta (k, v) VALUES ('vapid', ?)`, JSON.stringify(vapid))
+  return JSON.parse(sql.exec<{ v: string }>(`SELECT v FROM meta WHERE k = 'vapid'`).one().v) as Vapid
 }
 
 /** RFC 8030 Topic: ≤ 32 URL-safe base64 chars. A newer push with the same topic replaces an undelivered older one. */

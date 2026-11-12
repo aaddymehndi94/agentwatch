@@ -31,11 +31,19 @@ export const Config = z.object({
         .int()
         .min(0)
         .default(11 * 3600),
-      /** Poll `claude agents --json` (seconds; 0 = off). */
-      pollSeconds: z.number().int().min(0).default(30),
     })
-    .default({ enabled: true, holdSeconds: 11 * 3600, pollSeconds: 30 }),
-  codex: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+    .default({ enabled: true, holdSeconds: 11 * 3600 }),
+  codex: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** How long a Codex approval or question stays answerable on the phone (the TUI can answer it meanwhile). */
+      holdSeconds: z
+        .number()
+        .int()
+        .min(0)
+        .default(11 * 3600),
+    })
+    .default({ enabled: true, holdSeconds: 11 * 3600 }),
 })
 export type Config = z.infer<typeof Config>
 

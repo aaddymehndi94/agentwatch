@@ -1,6 +1,6 @@
 // The daemon's single outbound connection to the relay: a WebSocket to the Hub with reconnect + backoff.
 // On every (re)connect it sends hello + a full snapshot, so the relay converges no matter what was missed.
-// Pushes and timeline events made while offline are queued briefly; everything else is state, re-sent by the snapshot.
+// Pushes, timeline events and command acks made offline are queued briefly; the rest is state, re-sent by the snapshot.
 
 import { PING, RelayMessage, randomId, type SourceMessage } from '@agentwatch/protocol'
 import WebSocket from 'ws'
@@ -8,7 +8,7 @@ import type { Logger } from '../log.ts'
 
 const PING_EVERY_MS = 30_000
 const MAX_BACKOFF_MS = 60_000
-const QUEUE_MAX = { push: 20, event: 200 }
+const QUEUE_MAX = { push: 20, event: 200, 'command.ack': 100 }
 const QUEUE_TTL_MS = 10 * 60_000
 
 type WithoutRid<T> = T extends unknown ? Omit<T, 'rid'> : never
@@ -37,7 +37,7 @@ export class RelayLink {
   private stopped = false
   private pingTimer: NodeJS.Timeout | null = null
   private retryTimer: NodeJS.Timeout | null = null
-  /** Pushes and timeline events made while offline: the snapshot doesn't carry them. */
+  /** Pushes, timeline events and command acks made while offline: the snapshot doesn't carry them. */
   private queued: { at: number; msg: SourceMessage }[] = []
   private pendingAcks = new Map<string, { resolve: (r: AckResult) => void; timer: NodeJS.Timeout }>()
   lastConnectedAt = 0
@@ -93,9 +93,13 @@ export class RelayLink {
       this.o.log('info', 'relay connected', { url: this.o.relayUrl })
       this.o.onStatus?.(true)
       this.rawSend(this.o.hello())
-      this.rawSend(await this.o.snapshot())
+      const snapshot = await this.o.snapshot()
+      // The socket may have closed (and another opened) while the snapshot was being sealed: leave the queue for that one.
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return
+      this.rawSend(snapshot)
       const cutoff = Date.now() - QUEUE_TTL_MS
       for (const q of this.queued.splice(0)) if (q.at > cutoff) this.rawSend(q.msg)
+      if (this.pingTimer) clearInterval(this.pingTimer)
       this.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(PING)
       }, PING_EVERY_MS)
@@ -162,7 +166,7 @@ export class RelayLink {
    * (a hook that starts the daemon reports its first event before the relay link is up). */
   send(msg: SourceMessage): void {
     if (this.rawSend(msg)) return
-    if (msg.t === 'push' || msg.t === 'event') {
+    if (msg.t === 'push' || msg.t === 'event' || msg.t === 'command.ack') {
       this.queued.push({ at: Date.now(), msg })
       const kind = msg.t
       const same = this.queued.filter((q) => q.msg.t === kind)

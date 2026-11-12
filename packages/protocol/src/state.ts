@@ -69,9 +69,10 @@ export function reduce(s: Session, e: AgentEvent): { session: Session; transitio
   switch (e.type) {
     case 'session.start': {
       const fresh = s.state === 'unknown' || s.state === 'ended'
+      // A resume or compaction can restart a session that is blocked on you: it stays blocked.
       const next = withState(
         { ...s, info: mergeInfo(s.info, e.info) },
-        s.state === 'working' ? 'working' : 'idle',
+        s.openRequests.length ? 'needs_you' : s.state === 'working' ? 'working' : 'idle',
         e.at,
       )
       return { session: next, transition: fresh ? { kind: 'started' } : null }

@@ -218,6 +218,17 @@ describe('walking skeleton', () => {
     await waitFor('daemon back', async () => fs.existsSync(socketOf(home)))
     await waitFor('reconnected', async () => (await phone.state()).sources.find((x) => x.id === sourceId)?.online)
   }, 30_000)
+
+  it('after a crash leaves the socket file behind, the next hook still restarts the daemon and is delivered', async () => {
+    expect((await run(BIN, ['stop'], home)).code).toBe(0)
+    fs.writeFileSync(socketOf(home), '') // what a killed daemon leaves: a path nothing listens on
+    const r = await hook(home, { ...byEvent('UserPromptSubmit'), session_id: 'after-crash' })
+    expect(r).toMatchObject({ code: 0, stdout: '' })
+    const st = await call<{ sessions: { id: string; state: string }[] }>('GET', '/v1/status', undefined, {
+      socket: socketOf(home),
+    })
+    expect(st.body.sessions.find((s) => s.id === 'after-crash')?.state).toBe('working')
+  }, 30_000)
 })
 
 describe('pairing, phones and notifications', () => {
