@@ -58,7 +58,7 @@ export async function startRelay(): Promise<Relay> {
   const persistTo = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-relay-'))
   const worker = await wrangler.unstable_dev(path.join(RELAY_DIR, 'src/index.ts'), {
     config: path.join(RELAY_DIR, 'wrangler.jsonc'),
-    vars: { CLAIM_SECRET: claimSecret },
+    vars: { CLAIM_SECRET: claimSecret, OFFLINE_AFTER_SECONDS: '3', ALLOW_INSECURE_PUSH: '1' },
     ip: '127.0.0.1',
     local: true,
     persistTo,

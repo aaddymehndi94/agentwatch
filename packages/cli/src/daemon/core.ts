@@ -107,6 +107,11 @@ export class Core {
     this.pruneTimer.unref()
   }
 
+  /** The vault key was rotated: seal and verify with the new one from now on. */
+  setKey(key: CryptoKey): void {
+    this.o.key = key
+  }
+
   private now(): number {
     return this.o.now?.() ?? Date.now()
   }

@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   formatPairingCode,
+  generateVaultKey,
   importVaultKey,
   newPairingSecret,
   type RelayMessage,
@@ -17,7 +18,7 @@ import {
 import { z } from 'zod'
 import { ClaudeAdapter } from '../adapters/claude.ts'
 import { CodexAdapter } from '../adapters/codex.ts'
-import { type Config, loadConfig } from '../config.ts'
+import { type Config, loadConfig, saveConfig } from '../config.ts'
 import { fileLogger, type Logger } from '../log.ts'
 import { type Paths, paths } from '../paths.ts'
 import { VERSION } from '../version.ts'
@@ -310,6 +311,27 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
       relay.send({ t: 'mute', until })
       mute = until && until > Date.now() ? until : null
       return { status: 200, body: { mute } }
+    }
+    if (method === 'POST' && path === '/v1/rotate') {
+      if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay' } }
+      const onDisk = loadConfig(p.configFile)
+      if (onDisk && onDisk.sourceId !== cfg.sourceId)
+        return { status: 409, body: { error: 'the config changed under the daemon; run `agentwatch stop` and retry' } }
+      // Relay first: if it refuses, nothing changed. If we die after it agreed, re-running rotate finishes the job.
+      const vaultKey = generateVaultKey()
+      const key = await importVaultKey(vaultKey)
+      const ack = await relay.request({ t: 'rotate' })
+      if (!ack.ok) return { status: 502, body: { error: ack.error ?? 'the relay did not rotate' } }
+      saveConfig({ ...(onDisk ?? cfg), vaultKey }, p.configFile)
+      cfg.vaultKey = vaultKey
+      core.setKey(key)
+      // Reconnect: hello + a snapshot sealed with the new key. Answer once that is under way, so a `pair` right after
+      // doesn't race the old socket closing.
+      const before = relay.lastConnectedAt
+      relay.kick()
+      for (let i = 0; i < 100 && relay.lastConnectedAt === before; i++) await new Promise((r) => setTimeout(r, 100))
+      log('info', 'vault key rotated')
+      return { status: 200, body: { ok: true } }
     }
     if (method === 'POST' && path === '/v1/shutdown') {
       setTimeout(() => void stop().then(() => opts.exitOnShutdown && process.exit(0)), 10)

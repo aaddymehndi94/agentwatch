@@ -182,6 +182,11 @@ export const SourceMessage = z.discriminatedUnion('t', [
     expiresAt: ts,
     meta: z.record(z.string(), z.string()).optional(),
   }),
+  /**
+   * The vault key is being replaced (`agentwatch rotate`). The Hub signs out every phone and every other source, and
+   * forgets everything sealed with the old key; this source then reconnects and re-sends its state under the new one.
+   */
+  z.object({ t: z.literal('rotate'), rid: id }),
 ])
 export type SourceMessage = z.infer<typeof SourceMessage>
 

@@ -6,6 +6,7 @@ import path from 'node:path'
 import {
   bind,
   type EventInfo,
+  type PushInfo,
   parsePairingCode,
   type RequestInfo,
   type SessionInfo,
@@ -26,6 +27,7 @@ import {
   tempHome,
   waitFor,
 } from './harness.ts'
+import { FakePushService } from './push-service.ts'
 
 const fixture = loadClaudeFixture()
 const byEvent = (name: string, n = 0) => fixture.filter((e) => e.hook_event_name === name)[n]!
@@ -358,4 +360,99 @@ describe('phone replies into Claude', () => {
     expect(s.caps.reply).toBe(false)
     expect(s.caps.replyReason).toMatch(/AgentWatch plugin/)
   }, 30_000)
+})
+
+describe('notifications reach the phone, end-to-end encrypted', () => {
+  const PSID = 'push-session'
+  const push = new FakePushService()
+
+  beforeAll(async () => {
+    await push.start()
+    await run(BIN, ['mute', 'off'], home)
+    expect((await phone.fetch('POST', '/api/push/subscription', push.subscription())).status).toBe(200)
+  })
+  afterAll(() => push.stop())
+
+  it('needs you: a high-urgency push that only the phone can read, naming the exact command', async () => {
+    await hook(home, { ...byEvent('UserPromptSubmit'), session_id: PSID })
+    const held = hook(home, { ...byEvent('PermissionRequest', 0), session_id: PSID })
+    const p = await waitFor('needs_you push', async () => push.of('needs_you')[0])
+    expect(p.headers.urgency).toBe('high')
+    expect(p.payload).toMatchObject({ sourceId, sessionId: PSID, actions: true })
+    const info = await phone.open<PushInfo>(p.payload.sealed, bind.push(sourceId, String(p.payload.tag)))
+    const command = String((byEvent('PermissionRequest', 0).tool_input as { command: string }).command)
+    expect(info.body).toContain(command.slice(0, 40))
+    // Answered at the terminal: the hook lets go and prints nothing.
+    await hook(home, { ...byEvent('PostToolUse', 0), session_id: PSID })
+    expect((await held).stdout).toBe('')
+  }, 30_000)
+
+  it('offline: one push when the computer goes quiet while an agent is working', async () => {
+    expect((await run(BIN, ['stop'], home)).code).toBe(0)
+    const p = await waitFor('offline push', async () => push.of('offline')[0], 20_000)
+    expect(p.payload.title).toMatch(/went offline$/)
+    expect(p.payload.body).toMatch(/running/)
+    const src = (await phone.state()).sources.find((s) => s.id === sourceId)
+    expect(src?.online).toBe(false)
+    await new Promise((r) => setTimeout(r, 5000))
+    expect(push.of('offline')).toHaveLength(1)
+  }, 40_000)
+})
+
+describe('rotate: a new key after a lost phone', () => {
+  it("signs out every phone and other computer, and re-sends this user's sessions under the new key", async () => {
+    const cfgFile = path.join(home, 'config.json')
+    const oldKey = JSON.parse(fs.readFileSync(cfgFile, 'utf8')).vaultKey
+    // Another OS user on the same relay, holding the old key.
+    const inv = JSON.parse((await run(BIN, ['invite', '--json'], home)).stdout) as { link: string }
+    const home2 = tempHome()
+    try {
+      expect((await run(BIN, ['join', '--no-claude'], home2, `${inv.link}\n`)).code).toBe(0)
+      const second = JSON.parse(fs.readFileSync(path.join(home2, 'config.json'), 'utf8')).sourceId as string
+      await waitFor('second source online', async () =>
+        (await phone.state()).sources.find((s) => s.id === second && s.online),
+      )
+      // Without --yes and without a terminal it refuses and changes nothing.
+      const refused = await run(BIN, ['rotate'], home)
+      expect(refused.code).toBe(64)
+      expect(JSON.parse(fs.readFileSync(cfgFile, 'utf8')).vaultKey).toBe(oldKey)
+
+      const r = await run(BIN, ['rotate', '--yes', '--no-pair'], home)
+      expect(r.stderr).toBe('')
+      expect(r.code).toBe(0)
+      expect(r.stdout).toContain('✓ New key in place')
+      const newKey = JSON.parse(fs.readFileSync(cfgFile, 'utf8')).vaultKey
+      expect(newKey).not.toBe(oldKey)
+      expect(fs.statSync(cfgFile).mode & 0o777).toBe(0o600)
+
+      // The old phone is out at once; the other user is out and is told how to come back.
+      expect((await phone.fetch('GET', '/api/state')).status).toBe(401)
+      const status = await waitFor('second user refused', async () => {
+        const s = await call<{ relay: { connected: boolean; lastError: string | null } }>(
+          'GET',
+          '/v1/status',
+          undefined,
+          {
+            socket: socketOf(home2),
+          },
+        )
+        return !s.body.relay.connected && s.body.relay.lastError?.includes('join --force') ? s.body : undefined
+      })
+      expect(status.relay.lastError).toMatch(/no longer accepts this computer/)
+
+      // A phone paired now reads this user's sessions under the new key, and sees no one else.
+      const fresh = await FakeDevice.pair(relay.url, home)
+      const state = await waitFor('sessions re-sent', async () => {
+        const s = await fresh.state()
+        return s.sessions.some((x) => x.id === SID) ? s : undefined
+      })
+      expect(state.sources.map((s) => s.id)).toEqual([sourceId])
+      const sealed = state.sessions.find((x) => x.id === SID)!.sealed!
+      const info = await fresh.open<SessionInfo>(sealed, bind.session(sourceId, SID))
+      expect(info.project).toBeTruthy()
+    } finally {
+      await run(BIN, ['stop'], home2).catch(() => {})
+      fs.rmSync(home2, { recursive: true, force: true })
+    }
+  }, 90_000)
 })

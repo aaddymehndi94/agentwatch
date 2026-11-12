@@ -13,7 +13,7 @@ const PUSH_QUEUE_TTL_MS = 10 * 60_000
 
 type WithoutRid<T> = T extends unknown ? Omit<T, 'rid'> : never
 /** Messages the Hub acknowledges; `request` adds the `rid`. */
-export type AckedMessage = WithoutRid<Extract<SourceMessage, { t: 'pair.create' | 'push' }>>
+export type AckedMessage = WithoutRid<Extract<SourceMessage, { t: 'pair.create' | 'push' | 'rotate' }>>
 
 export interface AckResult {
   ok: boolean
@@ -83,6 +83,7 @@ export class RelayLink {
       handshakeTimeout: 15_000,
     })
     this.ws = ws
+    let refused = false
     ws.on('open', async () => {
       this.open = true
       this.backoff = 1000
@@ -120,12 +121,19 @@ export class RelayLink {
       this.o.onMessage(msg)
     })
     ws.on('unexpected-response', (_req, res) => {
-      this.lastError = `relay answered HTTP ${res.statusCode}`
-      if (res.statusCode === 401)
-        this.o.log('error', 'relay rejected this source token (401). Re-run `agentwatch setup`.')
+      refused = true
+      this.lastError =
+        res.statusCode === 401
+          ? 'the relay no longer accepts this computer (it was removed, or the key was rotated). ' +
+            'Run `agentwatch invite` where AgentWatch still works, then `agentwatch join --force` here.'
+          : `relay answered HTTP ${res.statusCode}`
+      if (res.statusCode === 401) this.o.log('error', 'relay rejected this source token (401)')
+      // With this listener `ws` leaves the handshake hanging; end it so the close handler retries with backoff.
+      res.resume()
+      ws.terminate()
     })
     ws.on('error', (e) => {
-      this.lastError = e.message
+      if (!refused) this.lastError = e.message
       this.o.log('debug', 'relay socket error', { error: e.message })
     })
     ws.on('close', (code) => {

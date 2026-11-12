@@ -25,6 +25,11 @@ const PAIRING_TTL_MS = 10 * 60 * 1000
 const ENDED_KEEP_MS = 3 * 24 * 60 * 60 * 1000
 const CLOSED_REQUEST_KEEP_MS = 10 * 60 * 1000
 const COMMAND_QUEUE_MS = 5 * 60 * 1000
+const EVENT_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+/** The daemon pings every 30 s; a socket with no ping for this long is dead even if it never closed. */
+const STALE_MS = 90 * 1000
+const OFFLINE_AFTER_MS = 10 * 60 * 1000
+const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000
 
 type Role = 'source' | 'device'
 interface Principal {
@@ -200,6 +205,7 @@ export class Hub extends DurableObject<Env> {
     server.serializeAttachment({ sourceId: who.id } satisfies Attachment)
     const now = Date.now()
     this.sql.exec('UPDATE sources SET last_seen = ?, offline_notified = 0 WHERE id = ?', now, who.id)
+    await this.scheduleAlarm(now + this.offlineAfterMs())
     this.send(server, { t: 'welcome', sourceId: who.id, serverTime: now, mute: this.mute() })
     this.flushCommands(who.id, server)
     return new Response(null, { status: 101, webSocket: client })
@@ -357,12 +363,37 @@ export class Hub extends DurableObject<Env> {
         )
         this.send(ws, { t: 'ack', rid: msg.rid, ok: true })
         break
+      case 'rotate':
+        this.rotate(sourceId)
+        this.send(ws, { t: 'ack', rid: msg.rid, ok: true })
+        break
     }
+  }
+
+  /**
+   * A new vault key: everyone else who holds the old one (every phone, every other source) is signed out, and what was
+   * sealed with it (sessions, requests, the timeline, queued commands, open invites) is unreadable, so it goes too.
+   * The owner, VAPID keys and mute stay. The rotating source re-sends its sessions under the new key.
+   */
+  private rotate(keep: string): void {
+    const others = this.sql
+      .exec<{ id: string }>('SELECT id FROM sources WHERE id != ?', keep)
+      .toArray()
+      .map((r) => r.id)
+    this.ctx.storage.transactionSync(() => {
+      this.sql.exec(`DELETE FROM tokens WHERE role = 'device' OR (role = 'source' AND subject != ?)`, keep)
+      for (const table of ['push_subs', 'devices', 'pairings', 'commands', 'events', 'requests', 'sessions'])
+        this.sql.exec(`DELETE FROM ${table}`)
+      this.sql.exec('DELETE FROM sources WHERE id != ?', keep)
+    })
+    for (const id of others) for (const ws of this.ctx.getWebSockets(id)) ws.close(4003, 'revoked')
   }
 
   override async webSocketClose(ws: WebSocket, code: number): Promise<void> {
     const { sourceId } = ws.deserializeAttachment() as Attachment
-    this.sql.exec('UPDATE sources SET last_seen = ? WHERE id = ?', Date.now(), sourceId)
+    const now = Date.now()
+    this.sql.exec('UPDATE sources SET last_seen = ? WHERE id = ?', now, sourceId)
+    await this.scheduleAlarm(now + this.offlineAfterMs())
     try {
       ws.close(code === 1005 ? 1000 : code, 'bye')
     } catch {
@@ -412,6 +443,96 @@ export class Hub extends DurableObject<Env> {
     )
   }
 
+  // ── Offline alert and housekeeping (alarm) ───────────────────────────────────────────────────────────────────────
+
+  private offlineAfterMs(): number {
+    const s = Number(this.env.OFFLINE_AFTER_SECONDS)
+    return Number.isFinite(s) && s > 0 ? s * 1000 : OFFLINE_AFTER_MS
+  }
+
+  private async scheduleAlarm(at: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm()
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at)
+  }
+
+  /** Last auto-answered ping (pings don't wake the object, so they never touch last_seen). */
+  private lastPing(sourceId: string): number {
+    const ws = this.sourceSocket(sourceId)
+    return ws ? (this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0) : 0
+  }
+
+  private isOnline(sourceId: string, lastSeen: number, now: number): boolean {
+    return !!this.sourceSocket(sourceId) && now - Math.max(lastSeen, this.lastPing(sourceId)) < STALE_MS
+  }
+
+  /**
+   * One "offline" push per outage: a source that has been silent for 10 minutes while an agent was working or waiting
+   * on you. A laptop that sleeps with idle agents stays quiet. Then prune what nobody will look at again.
+   */
+  override async alarm(): Promise<void> {
+    const now = Date.now()
+    const after = this.offlineAfterMs()
+    let next = now + PRUNE_EVERY_MS
+    const sources = this.sql
+      .exec<{ id: string; host: string; user: string; last_seen: number; offline_notified: number }>(
+        'SELECT id, host, user, last_seen, offline_notified FROM sources',
+      )
+      .toArray()
+    for (const src of sources) {
+      const heard = Math.max(src.last_seen, this.lastPing(src.id))
+      const ws = this.sourceSocket(src.id)
+      if (ws && now - heard < STALE_MS) {
+        next = Math.min(next, now + after)
+        continue
+      }
+      if (ws) {
+        // Half-open socket (the laptop slept or lost its network): drop it so the phone shows it offline.
+        try {
+          ws.close(4001, 'no ping')
+        } catch {}
+      }
+      if (src.offline_notified) continue
+      if (now - heard < after) {
+        next = Math.min(next, heard + after)
+        continue
+      }
+      this.sql.exec('UPDATE sources SET offline_notified = 1 WHERE id = ?', src.id)
+      const active =
+        this.sql
+          .exec<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM sessions WHERE source_id = ? AND state IN ('working', 'needs_you')`,
+            src.id,
+          )
+          .toArray()[0]?.n ?? 0
+      if (!active || this.mute() !== null) continue
+      const who = src.user && src.host ? `${src.user}@${src.host}` : 'A computer'
+      const minutes = Math.max(1, Math.round((now - heard) / 60_000))
+      await deliverPush(
+        this.sql,
+        this.env,
+        {
+          v: 1,
+          tag: `offline:${src.id}`,
+          kind: 'offline',
+          sourceId: src.id,
+          title: `${who} went offline`,
+          body: `${active === 1 ? 'An agent was' : `${active} agents were`} running. Last heard from ${minutes} min ago.`,
+        },
+        'normal',
+      ).catch((e) => console.error('offline push failed', e))
+    }
+    this.prune(now)
+    await this.ctx.storage.setAlarm(next)
+  }
+
+  private prune(now: number): void {
+    this.sql.exec(`DELETE FROM sessions WHERE state = 'ended' AND state_since < ?`, now - ENDED_KEEP_MS)
+    this.sql.exec(`DELETE FROM requests WHERE status != 'open' AND closed_at < ?`, now - ENDED_KEEP_MS)
+    this.sql.exec('DELETE FROM events WHERE at < ?', now - EVENT_KEEP_MS)
+    this.sql.exec('DELETE FROM commands WHERE updated_at < ?', now - PRUNE_EVERY_MS)
+    this.sql.exec('DELETE FROM pairings WHERE expires_at < ?', now)
+  }
+
   // ── Devices ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
   private touchDevice(id: string): void {
@@ -446,8 +567,8 @@ export class Hub extends DurableObject<Env> {
         user: r.user,
         privacy: r.privacy === 'summary' ? 'summary' : 'full',
         allowMessages: r.allow_messages === 1,
-        online: this.ctx.getWebSockets(r.id).length > 0,
-        lastSeen: r.last_seen,
+        online: this.isOnline(r.id, r.last_seen, now),
+        lastSeen: Math.max(r.last_seen, this.lastPing(r.id)),
         daemonVersion: r.daemon_version,
         adapters: JSON.parse(r.adapters || '{}'),
       }))
@@ -601,7 +722,9 @@ export class Hub extends DurableObject<Env> {
         keys: z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }),
       })
       .parse(await request.json())
-    if (!sub.endpoint.startsWith('https://')) return err(400, 'push endpoint must be https')
+    const insecureOk =
+      this.env.ALLOW_INSECURE_PUSH === '1' && /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(sub.endpoint)
+    if (!sub.endpoint.startsWith('https://') && !insecureOk) return err(400, 'push endpoint must be https')
     this.sql.exec(
       `INSERT INTO push_subs (endpoint, device_id, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (endpoint) DO UPDATE SET device_id = excluded.device_id, p256dh = excluded.p256dh, auth = excluded.auth`,

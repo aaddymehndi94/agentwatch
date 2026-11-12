@@ -18,6 +18,7 @@ Everyday
   status                                        What the daemon sees right now
   mute [30m|1h|8h|until 08:00|off]              Pause notifications to every phone (default 1h)
   setup                                         Re-run any time to update and repair the install
+  rotate [--yes] [--no-pair]                    New end-to-end key: signs out every phone and other computer
 
 Options for setup, join and relay deploy
   --privacy full|summary    summary: no text (prompts, commands, replies) ever leaves this user
@@ -77,6 +78,8 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./commands/mute.ts')).mute(rest)
     case 'unmute':
       return (await import('./commands/mute.ts')).mute(['off'])
+    case 'rotate':
+      return (await import('./commands/rotate.ts')).rotate(rest)
     default:
       console.error(`Unknown command: ${cmd}\n\n${HELP}`)
       return 64

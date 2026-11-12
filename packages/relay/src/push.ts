@@ -58,9 +58,15 @@ export async function deliverPush(
   await Promise.all(
     subs.map(async (s) => {
       try {
+        // Tests only: a local fake push service on plain http. The library insists on https, so sign for that form.
+        const insecure = env.ALLOW_INSECURE_PUSH === '1' && /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(s.endpoint)
         const req = await buildPushPayload(
           { data: payload, options: { ttl: urgency === 'high' ? 3 * 3600 : 3600, urgency, topic } },
-          { endpoint: s.endpoint, expirationTime: null, keys: { p256dh: s.p256dh, auth: s.auth } },
+          {
+            endpoint: insecure ? s.endpoint.replace(/^http:/, 'https:') : s.endpoint,
+            expirationTime: null,
+            keys: { p256dh: s.p256dh, auth: s.auth },
+          },
           { subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
         )
         const res = await fetch(s.endpoint, req)

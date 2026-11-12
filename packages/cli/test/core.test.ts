@@ -143,6 +143,24 @@ describe('Core', () => {
     expect(await held).toBe('')
   })
 
+  it('summary privacy: a long turn still says "done", without the last message', async () => {
+    const { core, claude } = await makeCore({ privacy: 'summary' })
+    const t0 = Date.now()
+    vi.useFakeTimers({ now: t0, toFake: ['Date'] })
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    vi.setSystemTime(t0 + 65_000)
+    await claude.onHook(byEvent('Stop'))
+    await core.flushed()
+    const [push] = of('push')
+    expect(push?.push.kind).toBe('done')
+    const info = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push.tag))
+    expect(info.title).toBe('Claude finished · work')
+    expect(JSON.stringify(info)).not.toContain('s3.txt')
+    const sinfo = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
+    expect(JSON.stringify(sinfo)).not.toContain('s3.txt')
+    expect(of('event').every((m) => m.event.sealed === undefined)).toBe(true)
+  })
+
   it('waits before pushing needs_you, and skips the push if it was answered at the keyboard', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const { core, claude } = await makeCore({ needsYouDelayMs: 10_000 })
