@@ -140,7 +140,7 @@ export async function relay(argv: string[]): Promise<number> {
     return 1
   }
   let claimed: Awaited<ReturnType<typeof claimRelay>> = null
-  for (let i = 0; i < 10 && !claimed; i++) {
+  for (let i = 0; i < 20 && !claimed; i++) {
     // The new secret takes a few seconds to reach the edge.
     await new Promise((r) => setTimeout(r, 2000))
     claimed = await claimRelayQuietly(url, claimSecret)

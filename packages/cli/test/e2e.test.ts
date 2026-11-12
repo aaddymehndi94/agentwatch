@@ -97,6 +97,13 @@ describe('walking skeleton', () => {
       body: JSON.stringify({ claimSecret: relay.claimSecret }),
     })
     expect(again.status).toBe(409)
+    // A client can't supply the claim secret it then "knows": only the Worker sets that header.
+    const forged = await fetch(`${relay.url}/api/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-agentwatch-claim-secret': 'guessed-secret-123456' },
+      body: JSON.stringify({ claimSecret: 'guessed-secret-123456' }),
+    })
+    expect(forged.status).toBe(403)
   }, 30_000)
 
   it('serves the phone app with a strict content security policy', async () => {

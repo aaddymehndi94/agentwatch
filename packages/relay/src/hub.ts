@@ -41,6 +41,9 @@ interface Attachment {
   sourceId: string
 }
 
+/** Set only by the Worker (which strips it from clients): the claim secret as the newest Worker version sees it. */
+export const CLAIM_SECRET_HEADER = 'x-agentwatch-claim-secret'
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -136,7 +139,7 @@ export class Hub extends DurableObject<Env> {
    * the old one is gone: that signs out every computer and phone, as `rotate` does.
    */
   private async claim(request: Request): Promise<Response> {
-    const secret = this.env.CLAIM_SECRET
+    const secret = request.headers.get(CLAIM_SECRET_HEADER) || this.env.CLAIM_SECRET
     if (!secret) return err(503, 'relay has no CLAIM_SECRET configured')
     const body = z.object({ claimSecret: z.string().min(16) }).parse(await request.json())
     if (!constantTimeEqual(body.claimSecret, secret)) return err(403, 'wrong claim secret')
