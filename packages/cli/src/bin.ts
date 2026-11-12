@@ -8,10 +8,10 @@ Usage: agentwatch <command> [options]
 
 Getting started
   relay deploy                                  Deploy your relay to Cloudflare (wrangler) and claim it
-  setup --relay <url> --claim-secret <secret>   Connect this OS user to a relay you deployed another way
-  pair                                          Pair a phone (shows a QR code and link)
-  invite                                        Invite another OS user or computer to this relay
-  join                                          Join a relay with an invite (pasted on stdin)
+  setup --relay <url>                           Connect to a relay you deployed another way (asks for its claim secret)
+  pair                                          Pair a phone (owner only; shows a QR code and link)
+  invite                                        Invite another OS user or computer (owner only)
+  join [--yes]                                  Join a relay with an invite (pasted on stdin), after confirming
   doctor [--test-push]                          Check every link from this user to your phone
 
 Everyday

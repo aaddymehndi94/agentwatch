@@ -98,7 +98,7 @@ describe('agentwatch emit', () => {
     await core.flushed()
     const [push] = of('push')
     expect(push?.push.kind).toBe('done')
-    const pinfo = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push.tag))
+    const pinfo = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push))
     expect(pinfo).toEqual({ title: 'Agent finished · etl', body: 'Loaded 1.2M rows' })
 
     generic.emit({ session: 'nightly', state: 'ended' })
@@ -138,7 +138,7 @@ describe('agentwatch ask', () => {
     expect(await pending).toEqual({ status: 'answered', answers: ['staging'] })
     expect(req.kind).toBe('question')
     expect(req.answerable).toBe(true)
-    const info = await open<RequestInfo>(key, req.sealed, bind.request(SOURCE, req.sessionId, req.id))
+    const info = await open<RequestInfo>(key, req.sealed, bind.request(SOURCE, req))
     expect(info.questions?.[0]?.options.map((o) => o.label)).toEqual(['staging', 'prod'])
     await core.flushed()
     expect(sessionState(req.sessionId)?.state).toBe('ended')

@@ -129,6 +129,18 @@ export function projectFromCwd(cwd: string | undefined): string | undefined {
 }
 
 /** Cut text to `max` characters on a word boundary, with an ellipsis. */
+/** The longest command or tool input shown on the phone. Anything longer is answered at the computer. */
+export const DETAIL_MAX = 8000
+
+/**
+ * Literal text (a command, a tool's input) exactly as it will run, line breaks and all, so a second line can't hide
+ * behind the first. Past `max` characters it is cut, and says so on a line of its own.
+ */
+export function literal(text: string, max: number): { text: string; cut: boolean } {
+  if (text.length <= max) return { text, cut: false }
+  return { text: `${text.slice(0, max)}\n… ${text.length - max} more characters not shown`, cut: true }
+}
+
 export function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, ' ').trim()
   if (t.length <= max) return t

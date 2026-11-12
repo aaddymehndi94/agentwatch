@@ -99,6 +99,15 @@ describe('walking skeleton', () => {
     expect(again.status).toBe(409)
   }, 30_000)
 
+  it('serves the phone app with a strict content security policy', async () => {
+    const page = await fetch(`${relay.url}/`)
+    expect(page.status).toBe(200)
+    const csp = page.headers.get('content-security-policy') ?? ''
+    expect(csp).toContain("script-src 'self'")
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(page.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
   it('the first hook starts the daemon on demand and the session shows up working', async () => {
     const r = await hook(home, byEvent('UserPromptSubmit'))
     expect(r).toMatchObject({ code: 0, stdout: '' })
@@ -126,7 +135,7 @@ describe('walking skeleton', () => {
     expect(session(st)?.state).toBe('needs_you')
     const req = st.requests.find((r) => r.sessionId === SID && r.status === 'open')!
     expect(req).toMatchObject({ kind: 'permission', answerable: true })
-    const info = await phone.open<RequestInfo>(req.sealed, bind.request(sourceId, SID, req.id))
+    const info = await phone.open<RequestInfo>(req.sealed, bind.request(sourceId, req))
     expect(info).toMatchObject({ tool: 'Bash', detail: 'date > s3.txt' })
 
     const cmd = await phone.command({
@@ -168,7 +177,7 @@ describe('walking skeleton', () => {
       (await phone.state()).requests.find((r) => r.sessionId === SID && r.status === 'open'),
     )
     expect(req.kind).toBe('question')
-    const info = await phone.open<RequestInfo>(req.sealed, bind.request(sourceId, SID, req.id))
+    const info = await phone.open<RequestInfo>(req.sealed, bind.request(sourceId, req))
     expect(info.questions?.[0]).toMatchObject({ question: 'Ship it?', options: [{ label: 'Yes' }, { label: 'No' }] })
     // Claude answered locally: the PostToolUse carries the same input plus `answers`.
     await hook(home, byEvent('PostToolUse', 1))
@@ -261,8 +270,13 @@ describe('pairing, phones and notifications', () => {
     expect(link).toMatch(/#\/join\//)
     const home2 = tempHome()
     try {
-      const j = await run(BIN, ['join', '--privacy', 'summary', '--no-claude'], home2, `${link}\n`)
-      expect(j.stderr).toBe('')
+      // Piped in without --yes, join says what it would hand over and stops, leaving the invite unused.
+      const unsure = await run(BIN, ['join', '--privacy', 'summary', '--no-claude'], home2, `${link}\n`)
+      expect(unsure.code).toBe(64)
+      expect(unsure.stderr).toMatch(/approve or deny its agents/)
+      expect(unsure.stderr).toMatch(/summary privacy/)
+      expect(fs.existsSync(path.join(home2, 'config.json'))).toBe(false)
+      const j = await run(BIN, ['join', '--yes', '--privacy', 'summary', '--no-claude'], home2, `${link}\n`)
       expect(j.code).toBe(0)
       const read = (h: string) => JSON.parse(fs.readFileSync(path.join(h, 'config.json'), 'utf8'))
       const [one, two] = [read(home), read(home2)]
@@ -274,7 +288,18 @@ describe('pairing, phones and notifications', () => {
         (await phone.state()).sources.find((s) => s.id === two.sourceId && s.online),
       )
       expect(src.privacy).toBe('summary')
-      const again = await run(BIN, ['join', '--no-claude', '--force'], home2, `${link}\n`)
+      // Only the owner pairs phones, invites and rotates: a rogue agent in this user can't reach the first one's.
+      for (const cmd of [
+        ['pair', '--json'],
+        ['invite', '--json'],
+        ['rotate', '--yes', '--no-pair'],
+      ]) {
+        const r = await run(BIN, cmd, home2)
+        expect(r.code).toBe(1)
+        expect(r.stderr).toMatch(/only the owner \(.+@.+\) can pair phones/)
+      }
+      expect((await phone.fetch('GET', '/api/state')).status).toBe(200)
+      const again = await run(BIN, ['join', '--yes', '--no-claude', '--force'], home2, `${link}\n`)
       expect(again.code).toBe(1)
       expect(again.stderr).toMatch(/expired or was already used/)
     } finally {
@@ -388,7 +413,10 @@ describe('notifications reach the phone, end-to-end encrypted', () => {
     const p = await waitFor('needs_you push', async () => push.of('needs_you')[0])
     expect(p.headers.urgency).toBe('high')
     expect(p.payload).toMatchObject({ sourceId, sessionId: PSID, actions: true })
-    const info = await phone.open<PushInfo>(p.payload.sealed, bind.push(sourceId, String(p.payload.tag)))
+    const clear = p.payload as unknown as Parameters<typeof bind.push>[1]
+    const info = await phone.open<PushInfo>(p.payload.sealed, bind.push(sourceId, clear))
+    // The seal covers the request it names: pointed at another request, it no longer opens.
+    await expect(phone.open(p.payload.sealed, bind.push(sourceId, { ...clear, requestId: 'other' }))).rejects.toThrow()
     const command = String((byEvent('PermissionRequest', 0).tool_input as { command: string }).command)
     expect(info.body).toContain(command.slice(0, 40))
     // Answered at the terminal: the hook lets go and prints nothing.
@@ -420,7 +448,7 @@ describe('your own scripts: ask and emit', () => {
     const asked = run(BIN, ['ask', 'Which environment?', '--choices', 'staging,production', '--timeout', '1m'], home)
     const { r, s } = await openGeneric()
     expect(s.sessions.find((x) => x.id === r.sessionId)).toMatchObject({ agent: 'generic', state: 'needs_you' })
-    const info = await phone.open<RequestInfo>(r.sealed, bind.request(sourceId, r.sessionId, r.id))
+    const info = await phone.open<RequestInfo>(r.sealed, bind.request(sourceId, r))
     expect(info.questions?.[0]?.options.map((o) => o.label)).toEqual(['staging', 'production'])
     await phone.command({
       sourceId,
@@ -492,7 +520,7 @@ describe('rotate: a new key after a lost phone', () => {
     const inv = JSON.parse((await run(BIN, ['invite', '--json'], home)).stdout) as { link: string }
     const home2 = tempHome()
     try {
-      expect((await run(BIN, ['join', '--no-claude'], home2, `${inv.link}\n`)).code).toBe(0)
+      expect((await run(BIN, ['join', '--yes', '--no-claude'], home2, `${inv.link}\n`)).code).toBe(0)
       const second = JSON.parse(fs.readFileSync(path.join(home2, 'config.json'), 'utf8')).sourceId as string
       await waitFor('second source online', async () =>
         (await phone.state()).sources.find((s) => s.id === second && s.online),

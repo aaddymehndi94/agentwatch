@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { install, MARKETPLACE, PLUGIN_ID, pickNode, uninstall } from '../src/install.ts'
+import { install, MARKETPLACE, ownNodeCopy, PLUGIN_ID, pickNode, trustedBinary, uninstall } from '../src/install.ts'
 import { paths } from '../src/paths.ts'
 import { VERSION } from '../src/version.ts'
 import { CLI_DIR } from './harness.ts'
@@ -187,11 +187,52 @@ describe('pickNode', () => {
     expect(pickNode(home, { PATH: '' }, '/elsewhere/node')).toBe(path.join(home, '.nvm/versions/node/v24.1.0/bin/node'))
   })
 
-  it('falls back to the running Node when this user has nothing new enough', () => {
+  it('falls back to the running Node when this user has nothing new enough and that Node is safe', () => {
     fakeNode(path.join(home, '.nvm/versions/node/v18.18.2/bin/node'), 'v18.18.2')
-    expect(pickNode(home, { PATH: '' }, '/elsewhere/node')).toMatch(/node$/)
-    expect(execFileSync(pickNode(home, { PATH: '' }, process.execPath), ['--version'], { encoding: 'utf8' })).toMatch(
-      /^v(2[2-9]|[3-9]\d)\./,
-    )
+    const node = pickNode(home, { PATH: '' }, process.execPath)
+    expect(node).not.toBeNull()
+    expect(execFileSync(node!, ['--version'], { encoding: 'utf8' })).toMatch(/^v(2[2-9]|[3-9]\d)\./)
   })
+
+  it('skips a Node that someone else could swap out', () => {
+    const shared = path.join(home, '.nvm/versions/node/v26.0.0/bin/node')
+    fakeNode(shared, 'v26.0.0')
+    fs.chmodSync(path.dirname(shared), 0o777)
+    expect(pickNode(home, { PATH: '' }, '/elsewhere/node')).not.toBe(shared)
+    fs.chmodSync(path.dirname(shared), 0o755)
+    expect(pickNode(home, { PATH: '' }, '/elsewhere/node')).toBe(shared)
+  })
+})
+
+describe('trustedBinary', () => {
+  const me = { uid: process.getuid!(), gid: process.getgid!() }
+  const file = () => path.join(home, 'bin', 'node')
+  beforeEach(() => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true, mode: 0o755 })
+    fs.writeFileSync(file(), '#!/bin/sh\n', { mode: 0o755 })
+  })
+
+  it('trusts a binary only this user can change', () => {
+    expect(trustedBinary(file(), me)).toBe(true)
+    expect(trustedBinary('bin/node', me)).toBe(false)
+  })
+
+  it('refuses one owned by another user, or writable by others, or reached through a shared folder', () => {
+    expect(trustedBinary(file(), { uid: me.uid + 1, gid: me.gid + 1 })).toBe(false)
+    fs.chmodSync(file(), 0o757)
+    expect(trustedBinary(file(), me)).toBe(false)
+    fs.chmodSync(file(), 0o755)
+    const shared = path.join(home, 'shared')
+    fs.mkdirSync(shared, { mode: 0o777 })
+    fs.chmodSync(shared, 0o777)
+    fs.symlinkSync(file(), path.join(shared, 'node'))
+    expect(trustedBinary(path.join(shared, 'node'), me)).toBe(false)
+  })
+
+  it('gives a user without a safe Node a private copy', () => {
+    const copy = ownNodeCopy(path.join(home, 'install'), process.execPath)
+    expect(copy).toBe(path.join(home, 'install', 'node', 'bin', 'node'))
+    expect(trustedBinary(copy, me)).toBe(true)
+    expect(execFileSync(copy, ['--version'], { encoding: 'utf8' })).toBe(`${process.version}\n`)
+  }, 30_000)
 })

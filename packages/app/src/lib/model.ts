@@ -111,7 +111,7 @@ export async function decryptState(raw: StateView, key: CryptoKey): Promise<Mode
       status: r.status,
       closedAt: r.closedAt ?? null,
       answerable: r.answerable,
-      info: await tryOpen<RequestInfo>(key, r.sealed, bind.request(r.sourceId, r.sessionId, r.id)),
+      info: await tryOpen<RequestInfo>(key, r.sealed, bind.request(r.sourceId, r)),
       seq: i + 1,
     })),
   )
@@ -125,16 +125,20 @@ export async function decryptState(raw: StateView, key: CryptoKey): Promise<Mode
   }
 }
 
+/** A session's timeline. Bound to the session the screen asked for, so the relay can't move events between sessions. */
 export async function decryptEvents(
   events: { sessionId: string; at: number; kind: string; sealed?: string }[],
   sourceId: string,
+  sessionId: string,
   key: CryptoKey,
 ): Promise<EventVM[]> {
   return Promise.all(
-    events.map(async (e) => {
-      const info = await tryOpen<EventInfo>(key, e.sealed, bind.event(sourceId, e))
-      return { at: e.at, kind: e.kind, ...(info?.text ? { text: info.text } : {}) }
-    }),
+    events
+      .filter((e) => e.sessionId === sessionId)
+      .map(async (e) => {
+        const info = await tryOpen<EventInfo>(key, e.sealed, bind.event(sourceId, { ...e, sessionId }))
+        return { at: e.at, kind: e.kind, ...(info?.text ? { text: info.text } : {}) }
+      }),
   )
 }
 

@@ -30,6 +30,7 @@ const EVENT_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 const STALE_MS = 90 * 1000
 const OFFLINE_AFTER_MS = 10 * 60 * 1000
 const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000
+const MAX_MUTE_MS = 7 * 24 * 60 * 60 * 1000
 
 type Role = 'source' | 'device'
 interface Principal {
@@ -126,17 +127,56 @@ export class Hub extends DurableObject<Env> {
     return row ? { role: row.role, id: row.subject } : null
   }
 
-  /** First-run ownership: whoever knows the deploy-time CLAIM_SECRET gets the first source token. Works once. */
+  /**
+   * Ownership: whoever knows the deploy-time CLAIM_SECRET gets the first source token, the owner's. Each secret works
+   * once. Setting a new secret (which takes your Cloudflare account) lets you claim again, from a new owner computer if
+   * the old one is gone: that signs out every computer and phone, as `rotate` does.
+   */
   private async claim(request: Request): Promise<Response> {
     const secret = this.env.CLAIM_SECRET
     if (!secret) return err(503, 'relay has no CLAIM_SECRET configured')
     const body = z.object({ claimSecret: z.string().min(16) }).parse(await request.json())
     if (!constantTimeEqual(body.claimSecret, secret)) return err(403, 'wrong claim secret')
-    if (this.isClaimed()) return err(409, 'relay already claimed')
+    const hash = await sha256Hex(`claim:${secret}`)
+    if (this.isClaimed()) {
+      const used = this.meta('claim_hash')
+      if (!used || used === hash) return err(409, 'relay already claimed')
+    }
     const sourceId = randomId(12)
-    this.sql.exec(`INSERT INTO meta (k, v) VALUES ('claimed', ?)`, String(Date.now()))
-    this.insertSource(sourceId)
+    const others = this.sql.exec<{ id: string }>('SELECT id FROM sources').toArray()
+    this.ctx.storage.transactionSync(() => {
+      this.sql.exec('DELETE FROM tokens')
+      for (const table of ['push_subs', 'devices', 'pairings', 'commands', 'events', 'requests', 'sessions', 'sources'])
+        this.sql.exec(`DELETE FROM ${table}`)
+      this.setMeta('claimed', String(Date.now()))
+      this.setMeta('claim_hash', hash)
+      this.setMeta('owner', sourceId)
+      this.insertSource(sourceId)
+    })
+    for (const { id } of others) for (const ws of this.ctx.getWebSockets(id)) ws.close(4003, 'revoked')
     return json({ sourceId, sourceToken: await this.issueToken('source', sourceId) })
+  }
+
+  private meta(k: string): string | undefined {
+    return this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', k).toArray()[0]?.v
+  }
+
+  private setMeta(k: string, v: string): void {
+    this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', k, v)
+  }
+
+  /**
+   * Only the owner (the computer that claimed the relay) pairs phones, invites computers and rotates the key. Every
+   * source holds the vault key, so a phone paired from another OS user could read and steer this one's agents. With
+   * this rule, an agent gone rogue in one OS user can't use AgentWatch to reach another's.
+   */
+  private ownerOnly(sourceId: string): string | null {
+    if (this.meta('owner') === sourceId) return null
+    const o = this.sql
+      .exec<{ user: string; host: string }>('SELECT user, host FROM sources WHERE id = ?', this.meta('owner') ?? '')
+      .toArray()[0]
+    const where = o?.user && o.host ? `${o.user}@${o.host}` : 'the computer that set up this relay'
+    return `only the owner (${where}) can pair phones, invite computers or rotate the key; run it there`
   }
 
   private insertSource(id: string, meta: Record<string, string> = {}): void {
@@ -351,7 +391,12 @@ export class Hub extends DurableObject<Env> {
           sourceId,
         )
         break
-      case 'pair.create':
+      case 'pair.create': {
+        const denied = this.ownerOnly(sourceId)
+        if (denied) {
+          this.send(ws, { t: 'ack', rid: msg.rid, ok: false, error: denied })
+          break
+        }
         this.sql.exec(
           'INSERT OR REPLACE INTO pairings (id, kind, wrapped, source_id, expires_at, meta) VALUES (?, ?, ?, ?, ?, ?)',
           msg.pairId,
@@ -363,10 +408,17 @@ export class Hub extends DurableObject<Env> {
         )
         this.send(ws, { t: 'ack', rid: msg.rid, ok: true })
         break
-      case 'rotate':
+      }
+      case 'rotate': {
+        const denied = this.ownerOnly(sourceId)
+        if (denied) {
+          this.send(ws, { t: 'ack', rid: msg.rid, ok: false, error: denied })
+          break
+        }
         this.rotate(sourceId)
         this.send(ws, { t: 'ack', rid: msg.rid, ok: true })
         break
+      }
     }
   }
 
@@ -772,9 +824,13 @@ export class Hub extends DurableObject<Env> {
     return json({ mute: this.applyMute(until) })
   }
 
+  /** Mute ends within a week at most, so a stolen token or a slip can't silence approvals for good. */
   private applyMute(until: number | null): number | null {
     if (until && until > Date.now())
-      this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('mute_until', ?)`, String(until))
+      this.sql.exec(
+        `INSERT OR REPLACE INTO meta (k, v) VALUES ('mute_until', ?)`,
+        String(Math.min(until, Date.now() + MAX_MUTE_MS)),
+      )
     else this.sql.exec(`DELETE FROM meta WHERE k = 'mute_until'`)
     const mute = this.mute()
     for (const ws of this.ctx.getWebSockets()) this.send(ws, { t: 'settings', mute })

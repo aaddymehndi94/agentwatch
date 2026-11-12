@@ -6,9 +6,28 @@ import { Privacy } from '@agentwatch/protocol'
 import { z } from 'zod'
 import { paths } from './paths.ts'
 
+/**
+ * A relay URL we will send a token to: https, or plain http only on this machine (local development). Over plain http
+ * to anywhere else, the source token would cross the network in the clear.
+ */
+export function relayUrlProblem(url: string): string | null {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return 'is not a URL'
+  }
+  if (u.protocol === 'https:') return null
+  if (u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) return null
+  return 'must start with https:// (plain http only works for localhost)'
+}
+
 export const Config = z.object({
   v: z.literal(1).default(1),
-  relayUrl: z.string().url(),
+  relayUrl: z
+    .string()
+    .url()
+    .refine((u) => relayUrlProblem(u) === null, { message: 'relay URL must be https (or http on localhost)' }),
   sourceId: z.string(),
   sourceToken: z.string(),
   vaultKey: z.string(),

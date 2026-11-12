@@ -2,7 +2,7 @@
 // can answer them. The terminal dialog stays live while a hook is held (spike S1); whichever side answers first wins,
 // and a local answer is recognised from the hooks that follow (PostToolUse, Stop, UserPromptSubmit, SessionEnd).
 
-import { clip, projectFromCwd, type Question, type RequestInfo } from '@agentwatch/protocol'
+import { clip, DETAIL_MAX, literal, projectFromCwd, type Question, type RequestInfo } from '@agentwatch/protocol'
 import type { AgentAdapter, Core, Outcome } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
 import { ClaudeBridge, type Delivery, NOT_CONNECTED } from './claude-bridge.ts'
@@ -112,14 +112,17 @@ export class ClaudeAdapter implements AgentAdapter {
     const tool = str(p.tool_name) ?? 'a tool'
     const input = isRecord(p.tool_input) ? p.tool_input : {}
     const questions = tool === 'AskUserQuestion' ? parseQuestions(input.questions) : undefined
-    const info: RequestInfo = questions?.length
-      ? { title: questions.length > 1 ? `${questions.length} questions` : 'Question', tool, questions }
-      : { title: `Use ${tool}`, tool, detail: describeTool(tool, input) }
+    const described = questions?.length ? undefined : describeTool(tool, input)
+    const info: RequestInfo = described
+      ? { title: `Use ${tool}`, tool, detail: described.detail }
+      : { title: questions!.length > 1 ? `${questions!.length} questions` : 'Question', tool, questions }
     const req = this.core.openRequest({
       agent: 'claude',
       sessionId: sid,
-      kind: questions?.length ? 'question' : 'permission',
+      kind: described ? 'permission' : 'question',
       info,
+      // Too long to show in full: don't let the phone approve what it can't show.
+      ...(described?.cut ? { answerable: false } : {}),
       timeoutMs: this.o.holdMs,
       match: matchKey(p.tool_name, p.tool_input),
     })
@@ -170,27 +173,32 @@ function stableStringify(v: unknown): string {
   return JSON.stringify(v) ?? 'null'
 }
 
-/** A one-glance description of what a tool wants to do. */
-export function describeTool(tool: string, input: Record<string, unknown>): string {
+/**
+ * What a tool wants to do, as the literal the human approves: the exact command, the file, the URL, or the tool's full
+ * input. Never the agent's own `description` of it, which could say anything. `cut` means it didn't fit.
+ */
+export function describeTool(tool: string, input: Record<string, unknown>): { detail: string; cut: boolean } {
   const s = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined)
+  const whole = (detail: string) => ({ detail, cut: false })
   switch (tool) {
-    case 'Bash':
-      return clip(s('command') ?? '', 600)
+    case 'Bash': {
+      const r = literal(s('command') ?? '', DETAIL_MAX)
+      return { detail: r.text, cut: r.cut }
+    }
     case 'Edit':
     case 'MultiEdit':
     case 'Write':
     case 'Read':
     case 'NotebookEdit':
-      return s('file_path') ?? s('notebook_path') ?? tool
+      return whole(s('file_path') ?? s('notebook_path') ?? tool)
     case 'WebFetch':
-      return s('url') ?? tool
+      return whole(s('url') ?? tool)
     case 'WebSearch':
-      return s('query') ?? tool
+      return whole(s('query') ?? tool)
     default: {
-      const desc = s('description') ?? s('command') ?? s('prompt')
-      if (desc) return clip(desc, 600)
-      const json = JSON.stringify(input)
-      return clip(json === '{}' ? tool : json, 600)
+      if (!Object.keys(input).length) return whole(tool)
+      const r = literal(JSON.stringify(input, null, 2), DETAIL_MAX)
+      return { detail: r.text, cut: r.cut }
     }
   }
 }

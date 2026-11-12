@@ -41,9 +41,9 @@ Under `summary` privacy the daemon seals only the project folder name and model.
 | Binding | Fields |
 | --- | --- |
 | `session` | `sourceId, sessionId` |
-| `request` | `sourceId, sessionId, requestId` |
+| `request` | `sourceId, sessionId, requestId, rk` (request kind) |
 | `event` | `sourceId, sessionId, at, ek` (event kind) |
-| `push` | `sourceId, tag` |
+| `push` | `sourceId, tag, pk` (push kind)`, sessionId, requestId, actions` |
 | `command` | `commandId, deviceId, sourceId, sessionId, requestId, ck` (command kind)`, ts, nonce` |
 | `pair` | `pairId` |
 
@@ -58,8 +58,14 @@ relay: `https://<relay>/#/pair/<code>` for a phone, or `#/join/<code>` for anoth
    deletes the pairing on that first claim, or after 10 minutes.
 3. It unwraps the vault key locally with the secret from the fragment.
 
-The first source gets its token from `POST /api/claim {claimSecret}`, which works once. The claim secret is set as a
-Worker secret at deploy time by `agentwatch relay deploy`.
+The first source, the **owner**, gets its token from `POST /api/claim {claimSecret}`. The claim secret is set as a
+Worker secret at deploy time by `agentwatch relay deploy`. Each secret works once (`409` after that). A claim with a
+*different* secret, which only someone with your Cloudflare account can set, makes a new owner and signs out every
+other source and device. That is how you recover from losing the owner computer.
+
+Only the owner may send `pair.create` (for phones and for other sources) and `rotate`. Other sources get
+`{ok: false, error}`. Every source holds the vault key, so a phone paired from another OS user could read and steer
+this one's agents; the rule keeps a compromised OS user from getting a device token at all.
 
 `rotate` replaces the vault key. The Hub then deletes every device and every other source with their tokens, all
 pairings, and everything sealed under the old key. The rotating source reconnects and re-sends its state.
@@ -134,7 +140,8 @@ never applied twice. It applies a new command only if every check passes:
 - `sourceId` is this source;
 - `ts` is within ±5 minutes of the daemon's clock, and not before the daemon started;
 - the nonce is new;
-- the request is still open and answerable;
+- the request is still open and answerable, and the command fits it: `decide` only for a permission, `answer` only
+  for a question;
 - for `message`: this source allows messages, the session is idle, and its adapter can deliver.
 
 Anything else is acked `rejected`, with a reason the phone shows.
@@ -149,7 +156,11 @@ The Hub signs with VAPID (keys generated inside the Durable Object on first use)
   "actions": true, "sealed": "…" }
 ```
 
-The service worker opens `sealed` with the vault key under the `push` binding. If it can't, for example on a phone
-that was signed out, it still shows a generic notification, because iOS requires every push to show something.
-Pushes that share a `tag` replace each other. `needs_you` goes out at high urgency, and Android shows Approve and Deny
-buttons on it when `actions` is true.
+The service worker opens `sealed` with the vault key under the `push` binding, which covers every clear field it acts
+on. If it can't, for example on a phone that was signed out, it still shows a generic notification, because iOS
+requires every push to show something. Pushes the relay makes itself (offline, test) carry clear `title` and `body`.
+Pushes that share a `tag` replace each other. `needs_you` goes out at high urgency.
+
+Android shows Approve and Deny on a notification only when the seal opened, `actions` is true, and `tag` is
+`req:<requestId>`. The daemon sets `actions` only for a permission whose whole detail fits in the notification: one
+line of at most 180 characters. Anything longer is approved in the app, which shows it in full.

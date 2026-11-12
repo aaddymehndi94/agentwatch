@@ -258,7 +258,8 @@ function Devices({ app, now }: { app: AppState; now: number }) {
                 type="button"
                 class="btn quiet"
                 onClick={async () => {
-                  if (!token || !confirm(`Remove ${d.name}? It will stop receiving notifications.`)) return
+                  const ask = `Remove ${d.name}? It is signed out at once. If it was lost or stolen, also run \`agentwatch rotate\` on your computer: the phone still holds the key.`
+                  if (!token || !confirm(ask)) return
                   await api(token, 'DELETE', `/api/devices/${d.id}`).catch(() => {})
                   load()
                 }}

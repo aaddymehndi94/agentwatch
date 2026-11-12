@@ -15,6 +15,19 @@ const CONNECT_TIMEOUT_MS = 800
 const RESPONSE_TIMEOUT_MS = 4000
 const SPAWN_WAIT_MS = 600
 
+/**
+ * Talk only to a daemon in a folder this user owns and nobody else can write to, so a HOME or XDG_STATE_HOME leaked
+ * from another account (tmux started from someone else's desktop, say) never leads to their daemon.
+ */
+function foreign(dir: string): boolean {
+  try {
+    const st = fs.statSync(dir)
+    return st.uid !== process.getuid?.() || (st.mode & 0o022) !== 0
+  } catch {
+    return false // not there yet: the daemon creates it, 0700
+  }
+}
+
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return ''
   let data = ''
@@ -80,6 +93,7 @@ async function main(): Promise<void> {
     return
   }
   const p = paths()
+  if (foreign(p.stateDir)) return
   const hold = HOLD_EVENTS.has(event)
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

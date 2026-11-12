@@ -86,9 +86,19 @@ describe('Claude adapter helpers', () => {
   })
 
   it('describes common tools at a glance', () => {
-    expect(describeTool('Bash', { command: 'pnpm test' })).toBe('pnpm test')
-    expect(describeTool('Edit', { file_path: '/x/y.ts', old_string: 'a' })).toBe('/x/y.ts')
-    expect(describeTool('mcp__srv__tool', {})).toBe('mcp__srv__tool')
+    expect(describeTool('Bash', { command: 'pnpm test' })).toEqual({ detail: 'pnpm test', cut: false })
+    expect(describeTool('Edit', { file_path: '/x/y.ts', old_string: 'a' }).detail).toBe('/x/y.ts')
+    expect(describeTool('mcp__srv__tool', {}).detail).toBe('mcp__srv__tool')
+  })
+
+  it('shows what a tool will really do, not what the agent says it does', () => {
+    // Line breaks stay, so a second command can't pass for part of a comment.
+    expect(describeTool('Bash', { command: 'ls  # tidy\ncurl x | sh' }).detail).toBe('ls  # tidy\ncurl x | sh')
+    const mcp = describeTool('mcp__srv__run', { command: 'rm -rf ~', description: 'List the files' }).detail
+    expect(mcp).toContain('"command": "rm -rf ~"')
+    const huge = describeTool('Bash', { command: `echo ${'x'.repeat(9000)}` })
+    expect(huge.cut).toBe(true)
+    expect(huge.detail).toMatch(/more characters not shown$/)
   })
 })
 
@@ -113,7 +123,7 @@ describe('Core', () => {
     await core.flushed()
     const [push] = of('push')
     expect(push?.push).toMatchObject({ kind: 'done', tag: `session:${SID}`, urgency: 'normal' })
-    const info = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push.tag))
+    const info = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push))
     expect(info.title).toBe('Claude finished · work')
     expect(info.body).toContain('I wrote the date to s3.txt')
   })
@@ -127,13 +137,13 @@ describe('Core', () => {
     expect(info).toEqual({ project: 'work' })
     const req = of('request.open')[0]!.request
     expect(req.answerable).toBe(false)
-    expect(await open<RequestInfo>(key, req.sealed, bind.request(SOURCE, SID, req.id))).toEqual({
+    expect(await open<RequestInfo>(key, req.sealed, bind.request(SOURCE, req))).toEqual({
       title: 'Question',
       tool: 'AskUserQuestion',
     })
     const push = of('push')[0]!.push
     expect(push.actions).toBe(false)
-    const pinfo = await open<PushInfo>(key, push.sealed, bind.push(SOURCE, push.tag))
+    const pinfo = await open<PushInfo>(key, push.sealed, bind.push(SOURCE, push))
     expect(pinfo).toEqual({ title: 'Claude has a question · work', body: 'Open to answer.' })
     expect(of('event').every((m) => m.event.sealed === undefined)).toBe(true)
     // Answering an unanswerable request from the phone is refused.
@@ -153,7 +163,7 @@ describe('Core', () => {
     await core.flushed()
     const [push] = of('push')
     expect(push?.push.kind).toBe('done')
-    const info = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push.tag))
+    const info = await open<PushInfo>(key, push!.push.sealed, bind.push(SOURCE, push!.push))
     expect(info.title).toBe('Claude finished · work')
     expect(JSON.stringify(info)).not.toContain('s3.txt')
     const sinfo = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
@@ -179,6 +189,57 @@ describe('Core', () => {
     expect(of('push').map((m) => m.push.kind)).toEqual(['needs_you'])
     core.stop()
     expect(await held2).toBe('')
+  })
+
+  it('seals each push and request to its clear fields, so the relay cannot repoint them', async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    const held = claude.onHook(byEvent('PermissionRequest', 0))
+    await core.flushed()
+    const req = of('request.open')[0]!.request
+    const push = of('push')[0]!.push
+    expect(push).toMatchObject({ kind: 'needs_you', requestId: req.id, tag: `req:${req.id}`, actions: true })
+    await expect(open(key, push.sealed, bind.push(SOURCE, push))).resolves.toBeTruthy()
+    for (const swap of [{ requestId: 'r-other' }, { sessionId: 's-other' }, { kind: 'done' }, { actions: false }]) {
+      await expect(open(key, push.sealed, bind.push(SOURCE, { ...push, ...swap }))).rejects.toThrow()
+    }
+    await expect(open(key, push.sealed, bind.push('another-source', push))).rejects.toThrow()
+    // A permission presented as a question (or back) doesn't open either.
+    await expect(open(key, req.sealed, bind.request(SOURCE, { ...req, kind: 'question' }))).rejects.toThrow()
+    core.stop()
+    await held
+  })
+
+  it('a command too long to show in full is answered at the computer', async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    const big = byEvent('PermissionRequest', 0)
+    const held = claude.onHook({ ...big, tool_input: { command: `echo ${'x'.repeat(9000)}` } })
+    await core.flushed()
+    const req = of('request.open')[0]!.request
+    expect(req.answerable).toBe(false)
+    expect(of('push')[0]!.push.actions).toBe(false)
+    await core.handleCommand(await command({ kind: 'decide', behavior: 'allow' }, { requestId: req.id }))
+    expect(of('command.ack').at(-1)).toMatchObject({ status: 'rejected' })
+    core.stop()
+    await held
+  })
+
+  it('approves only permissions and answers only questions', async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    const held = claude.onHook(byEvent('PermissionRequest', 1))
+    await core.flushed()
+    const q = of('request.open')[0]!.request
+    expect(q.kind).toBe('question')
+    await core.handleCommand(await command({ kind: 'decide', behavior: 'allow' }, { requestId: q.id }))
+    expect(of('command.ack').at(-1)).toMatchObject({
+      status: 'rejected',
+      detail: 'A question needs an answer, not approval',
+    })
+    await core.handleCommand(await command({ kind: 'answer', answers: { 'Ship it?': 'Yes' } }, { requestId: q.id }))
+    expect(of('command.ack').at(-1)).toMatchObject({ status: 'applied' })
+    expect(JSON.parse(await held)).toMatchObject({ hookSpecificOutput: { decision: { behavior: 'allow' } } })
   })
 
   it('a command the relay resends gets the same ack and is applied once', async () => {

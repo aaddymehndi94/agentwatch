@@ -6,19 +6,48 @@ import os from 'node:os'
 import readline from 'node:readline'
 import { parseArgs } from 'node:util'
 import { parsePairingCode, unwrapVaultKey } from '@agentwatch/protocol'
-import { Config, loadConfig } from '../config.ts'
+import { Config, loadConfig, relayUrlProblem } from '../config.ts'
 import { paths } from '../paths.ts'
 import { applyFlags, finishSetup, INSTALL_FLAGS } from './setup.ts'
 
 /** Accepts the invite link (`https://relay/#/join/<code>`), or a bare code with `--relay`. */
 export function parseInvite(input: string, relay?: string): { relayUrl: string; code: string } {
   const s = input.trim()
+  const checked = (relayUrl: string, code: string) => {
+    const problem = relayUrlProblem(relayUrl)
+    if (problem) throw new Error(`That invite's relay address ${problem}: ${relayUrl}`)
+    return { relayUrl, code }
+  }
   const m = /^(https?:\/\/[^#\s]+?)\/?#\/join\/(\S+)$/.exec(s)
-  if (m) return { relayUrl: m[1]!.replace(/\/+$/, ''), code: decodeURIComponent(m[2]!) }
+  if (m) return checked(m[1]!.replace(/\/+$/, ''), decodeURIComponent(m[2]!))
   if (/^https?:\/\//.test(s) && s.includes('#/pair/'))
     throw new Error('That is a phone pairing link. For a computer, run `agentwatch invite` where AgentWatch is set up.')
-  if (relay && /^[\w-]+\.[\w-]+$/.test(s)) return { relayUrl: relay.replace(/\/+$/, ''), code: s }
+  if (relay && /^[\w-]+\.[\w-]+$/.test(s)) return checked(relay.replace(/\/+$/, ''), s)
   throw new Error('That does not look like an invite. Paste the whole link that `agentwatch invite` printed.')
+}
+
+/** Say what joining hands over, and get a yes. Joining a stranger's relay would give them your agents. */
+async function confirmJoin(relayUrl: string, cfg: Config, yes: boolean, interactive: boolean): Promise<boolean> {
+  const who = `${os.userInfo().username}@${os.hostname()}`
+  const grants = [
+    cfg.privacy === 'summary'
+      ? 'see when its agents work and need you (summary privacy: no text leaves this user)'
+      : 'read what its agents are doing (prompts, commands, file paths)',
+    'approve or deny its agents’ requests and answer their questions',
+    ...(cfg.allowMessages ? ['type replies into its idle agents (turn off with --no-messages)'] : []),
+  ]
+  console.error(`Joining connects ${who} to the relay at ${new URL(relayUrl).host}.`)
+  console.error('Whoever owns that relay, and every phone paired with it, can then:')
+  for (const g of grants) console.error(`  • ${g}`)
+  if (yes) return true
+  if (!interactive) {
+    console.error('\nRun `agentwatch join --yes` to confirm.')
+    return false
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  const answer = await new Promise<string>((r) => rl.question('Join only if this is your own relay. Join? [y/N] ', r))
+  rl.close()
+  return /^y(es)?$/i.test(answer.trim())
 }
 
 async function readInvite(): Promise<string> {
@@ -34,7 +63,10 @@ async function readInvite(): Promise<string> {
 }
 
 export async function join(argv: string[]): Promise<number> {
-  const { values } = parseArgs({ args: argv, options: { ...INSTALL_FLAGS, relay: { type: 'string' } } })
+  const { values } = parseArgs({
+    args: argv,
+    options: { ...INSTALL_FLAGS, relay: { type: 'string' }, yes: { type: 'boolean', short: 'y' } },
+  })
   const p = paths()
   const existing = loadConfig(p.configFile)
   if (existing && !values.force) {
@@ -55,6 +87,16 @@ export async function join(argv: string[]): Promise<number> {
   } catch {
     console.error('That invite code is damaged. Copy the whole link again.')
     return 1
+  }
+  // Ask before using the invite: declining leaves it unused.
+  const planned = applyFlags(
+    Config.parse({ relayUrl: invite.relayUrl, sourceId: '-', sourceToken: '-', vaultKey: '-' }),
+    values,
+  )
+  if (!planned) return 64
+  if (!(await confirmJoin(invite.relayUrl, planned, !!values.yes, !!process.stdin.isTTY))) {
+    console.error('Not joined. The invite is still unused.')
+    return 64
   }
   let res: Response
   try {

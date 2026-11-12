@@ -12,12 +12,13 @@ not in a public issue. Include what an attacker needs and what they gain. We aim
 
 | Party | Can | Can't |
 | --- | --- | --- |
-| **Your relay** (Cloudflare, or anyone who reads its storage or traffic) | See ids, agent kinds, session states, timestamps, `user@host` names, privacy settings and versions; drop or delay messages | Read prompts, commands, file paths, questions, answers, replies or snippets; forge or replay an approval; move sealed content from one request to another |
+| **Your relay** (Cloudflare, or anyone who reads its storage or traffic) | See ids, agent kinds, session states, timestamps, `user@host` names, privacy settings and versions; drop or delay messages; show a notification of its own | Read prompts, commands, file paths, questions, answers, replies or snippets; forge or replay an approval; move sealed content from one request, session or notification to another; put Approve on a notification it made or altered |
 | **A network attacker** | See that you use your relay (TLS hides the rest) | Anything the relay can't |
 | **Apple's or Google's push service** | See push timing and size | Read pushes: they're encrypted per RFC 8291, and the content is sealed again with your vault key |
 | **A revoked or rotated phone** | Nothing new: its token is deleted at once | Read new data after `agentwatch rotate`, or act after its token is revoked |
 | **Another OS user on your computer** | See that AgentWatch is installed | Read your config or key (0600), talk to your daemon (socket 0600 in a 0700 folder), or steer your agents. Each user has their own daemon and token. |
-| **Text from the agent** shown on the phone | Show up as text | Run script in the app: it is rendered as text, never as HTML |
+| **An OS user or computer you joined** to your relay (say, an agent there went rogue) | Report its own sessions; mute notifications for up to a week | Pair a phone, invite a computer or rotate the key: only the owner can. So it gets no phone token, and can't read or steer the other users' agents through AgentWatch. |
+| **An agent's own text** shown on the phone | Show up as text | Run script in the app (it is rendered as text, never as HTML); hide part of a command behind a comment or a description (you see the exact command or tool input, line breaks and all) |
 
 ## How
 
@@ -31,19 +32,33 @@ not in a public issue. Include what an attacker needs and what they gain. We aim
   - the seal opens under that binding;
   - the timestamp is within ±5 minutes of its clock, and not before the daemon started;
   - the nonce is new;
-  - the request is still open;
+  - the request is still open, and the command fits it: approve or deny only a permission, answer only a question;
   - for free text: this computer allows messages, and the session is idle.
 
   The relay only forwards commands, so it can't forge one.
+- **What you approve is what runs.** The phone shows the exact command or the tool's full input, never the agent's
+  own description of it, with line breaks kept. A command longer than 8,000 characters is cut, says so, and can only
+  be answered at the computer. Approve appears on a notification only when the notification shows the whole command
+  (one line of at most 180 characters), and only if the push opened under its seal. That seal covers the request,
+  session, kind and buttons the notification acts on, so the relay can't point Approve at a different request.
 - **Pairing never exposes the key.** `agentwatch pair` uploads the vault key wrapped under a one-time secret. That
   secret travels only in the link's `#fragment`, which browsers don't send to servers. The relay deletes the wrapped
   key on first use, or after 10 minutes. `agentwatch join` reads its invite from stdin, so it doesn't land in your
   shell history.
-- **Relay ownership.** `agentwatch relay deploy` sets a random `CLAIM_SECRET` and claims the relay at once. A relay
-  only gives out a first token to whoever knows that secret, and only once. Phones and other computers get tokens
-  only through one-time pairings. The relay stores tokens SHA-256 hashed, and a device token can't act as a source.
+- **Relay ownership.** `agentwatch relay deploy` sets a random `CLAIM_SECRET` and claims the relay at once, making that
+  OS user the owner. A relay only gives out a first token to whoever knows that secret, and only once per secret.
+  Phones and other computers get tokens only through one-time pairings, and only the owner can create those, or
+  rotate the key. The relay stores tokens SHA-256 hashed, and a device token can't act as a source.
+- **Joining asks first.** `agentwatch join` names the relay and spells out what its owner gets (reading, approving,
+  replying) before it uses the invite. Relay URLs must be `https` (plain `http` only on localhost), so a token never
+  crosses the network in the clear.
 - **Least privilege on the computer.** Nothing runs as root, and nothing listens on the network: the daemon connects
-  out to your relay over one WebSocket. Hooks only talk to your own daemon's unix socket, and fail open.
+  out to your relay over one WebSocket. Hooks only talk to your own daemon's unix socket, and fail open. They only run
+  a launcher this user owns, with a Node binary that only this user or root can change; a user without one gets a
+  private copy. A `HOME` leaked from another account (tmux started from someone else's desktop) can't lead a hook to
+  another user's launcher or daemon.
+- **A locked-down app.** The relay serves the app with a Content Security Policy that allows only its own scripts and
+  its own relay, and forbids framing.
 - **Summary privacy.** With `--privacy summary`, a computer sends no free text at all: only states, the project folder
   name and the model.
 
@@ -63,6 +78,14 @@ not in a public issue. Include what an attacker needs and what they gain. We aim
    account.
 5. **No forward secrecy.** The vault key is static until you rotate it. Ciphertext the relay still holds (events for 7
    days, ended sessions for 3) is readable by anyone who later gets the key.
-6. **Availability isn't guaranteed.** Anyone can send requests to your Worker and use up your free-plan quota. If
+6. **Joined users share the vault key.** Every computer and OS user on a relay seals with the same key. The relay keeps
+   them apart (only the owner gets phones), but someone who controls a joined OS user *and* your relay's storage could
+   read, or forge commands for, the others. Join only accounts you'd trust with each other's agent traffic, and use
+   `--privacy summary` for a work account. Signing commands per phone is planned.
+7. **A reply isn't tied to a turn.** The relay can't forge or replay a reply, but it can hold one back for up to 5
+   minutes, so "yes, go ahead" may land on a later idle moment than the one you answered.
+8. **Summary privacy approves blind.** Under `--privacy summary` the phone sees "wants to use Bash" without the
+   command. If that's too little to go on, answer at the computer; the phone still tells you something is waiting.
+9. **Availability isn't guaranteed.** Anyone can send requests to your Worker and use up your free-plan quota. If
    your relay or computer is offline, nothing is lost: the agent's own dialog keeps working, and the phone shows the
    last known state.

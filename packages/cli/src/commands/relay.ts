@@ -89,7 +89,7 @@ export async function relay(argv: string[]): Promise<number> {
   const url = /https:\/\/[a-z0-9.-]+\.workers\.dev/i.exec(d.out)?.[0]
   if (!url) {
     console.error('\nDeployed, but could not find the relay URL in wrangler’s output. Finish with:')
-    console.error('  agentwatch setup --relay https://<your-relay> --claim-secret <secret>')
+    console.error('  agentwatch setup --relay https://<your-relay>   (paste the claim secret when asked)')
     return 1
   }
   console.log(`\n✓ Relay deployed: ${url}`)
@@ -126,7 +126,8 @@ export async function relay(argv: string[]): Promise<number> {
   }
   if (!claimed) claimed = await claimRelay(url, claimSecret)
   if (!claimed) {
-    console.error(`Finish later with: agentwatch setup --relay ${url} --claim-secret ${claimSecret}`)
+    console.error(`Finish later with \`agentwatch setup --relay ${url}\`, and paste this claim secret when asked:`)
+    console.error(`  ${claimSecret}`)
     return 1
   }
   console.log('✓ Relay claimed: it now only accepts this user, and computers and phones you add.')

@@ -21,6 +21,8 @@ export interface PushIntent {
   info: PushInfo
 }
 
+const PUSH_BODY_MAX = 180
+
 export function formatDuration(ms: number): string {
   const s = Math.round(ms / 1000)
   if (s < 60) return `${s}s`
@@ -40,8 +42,15 @@ export function decide(session: Session, t: Transition, ctx: PolicyContext): Pus
       const isQuestion = !!r?.questions?.length
       const title = isQuestion ? `${who} has a question · ${where}` : `${who} needs approval · ${where}`
       let body: string
+      // Approve on the notification only when the notification shows the whole thing. A command with more lines, or
+      // longer than fits, is approved in the app, which shows it in full.
+      let whole = true
       if (full && r) {
-        body = isQuestion ? clip(r.questions![0]!.question, 180) : clip(r.detail ?? r.title, 180)
+        const shown = isQuestion ? r.questions![0]!.question : (r.detail ?? r.title)
+        body = clip(shown, PUSH_BODY_MAX)
+        whole = !/[\r\n]/.test(shown.trim()) && shown.trim().length <= PUSH_BODY_MAX
+        if (!whole && !isQuestion)
+          body = `${clip(shown.split(/\r?\n/)[0]!, PUSH_BODY_MAX - 30)} (open to see all of it)`
       } else {
         body = isQuestion ? 'Open to answer.' : r?.tool ? `Wants to use ${r.tool}.` : 'Waiting for your decision.'
       }
@@ -50,7 +59,7 @@ export function decide(session: Session, t: Transition, ctx: PolicyContext): Pus
         tag: `req:${t.requestId}`,
         urgency: 'high',
         requestId: t.requestId,
-        actions: !isQuestion,
+        actions: !isQuestion && whole,
         info: { title, body },
       }
     }

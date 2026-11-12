@@ -139,7 +139,7 @@ function useEvents(app: AppState, sourceId: string, sessionId: string, version: 
     void (async () => {
       try {
         const raw = await getEvents(creds.token, sourceId, sessionId)
-        const list = await decryptEvents(raw, sourceId, await vaultKey(creds.vaultKey))
+        const list = await decryptEvents(raw, sourceId, sessionId, await vaultKey(creds.vaultKey))
         if (live) setEvents(list)
       } catch {}
     })()

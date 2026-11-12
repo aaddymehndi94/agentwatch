@@ -71,10 +71,17 @@ export function nodeMajor(node: string, run: Runner = defaultRunner): number {
 }
 
 /**
- * The Node the launchers should run: prefer one this user owns (nvm, fnm, volta, PATH) or the system's, newest first,
- * at least v22. Falls back to the Node running this command, which may live in another user's home.
+ * The Node the launchers should run on every hook: one this user owns (nvm, fnm, volta, PATH) or the system's, newest
+ * first, at least v22, that only this user or root can change (see `trustedBinary`). Null if there is none: then
+ * `ownNodeCopy` gives this user a private copy, rather than running a Node that another account could swap out.
  */
-export function pickNode(home: string, env: NodeJS.ProcessEnv, current: string, run: Runner = defaultRunner): string {
+export function pickNode(
+  home: string,
+  env: NodeJS.ProcessEnv,
+  current: string,
+  run: Runner = defaultRunner,
+  installDir?: string,
+): string | null {
   const candidates: string[] = []
   const versionsIn = (dir: string, bin: string) => {
     try {
@@ -91,16 +98,52 @@ export function pickNode(home: string, env: NodeJS.ProcessEnv, current: string, 
   candidates.push(...versionsIn(path.join(home, '.local/share/fnm/node-versions'), 'installation/bin/node'))
   candidates.push(path.join(home, '.volta/bin/node'))
   for (const dir of (env.PATH ?? '').split(path.delimiter)) if (dir) candidates.push(path.join(dir, 'node'))
-  candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node')
+  candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node', current)
+  if (installDir) candidates.push(ownNodePath(installDir))
   const seen = new Set<string>()
   for (const c of candidates) {
-    if (seen.has(c) || !isExecutable(c)) continue
+    if (seen.has(c) || !path.isAbsolute(c) || !isExecutable(c)) continue
     seen.add(c)
-    // Skip Nodes in another user's home: they can disappear under us.
-    if (c.startsWith('/home/') && !c.startsWith(`${home}/`)) continue
+    if (!trustedBinary(c)) continue
     if (nodeMajor(c, run) >= MIN_NODE_MAJOR) return c
   }
-  return current
+  return null
+}
+
+/**
+ * Safe to exec on every hook: owned by root or this user, and neither it, its folder, nor the folder of the link that
+ * leads to it can be changed by anyone else. (Group-writable is fine for this user's own group, as with nvm.)
+ */
+export function trustedBinary(
+  file: string,
+  ids: { uid: number; gid: number } = { uid: process.getuid?.() ?? 0, gid: process.getgid?.() ?? 0 },
+): boolean {
+  if (!path.isAbsolute(file)) return false
+  try {
+    const real = fs.realpathSync(file)
+    for (const f of new Set([path.dirname(file), real, path.dirname(real)])) {
+      const st = fs.statSync(f)
+      if (st.uid !== 0 && st.uid !== ids.uid) return false
+      if (st.mode & 0o002) return false
+      if (st.mode & 0o020 && st.gid !== 0 && st.gid !== ids.gid) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+const ownNodePath = (installDir: string) => path.join(installDir, 'node', 'bin', 'node')
+
+/** A private copy of `source` (the Node running setup), for a user with no Node 22+ of their own. */
+export function ownNodeCopy(installDir: string, source: string): string {
+  const dest = ownNodePath(installDir)
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o755 })
+  const tmp = `${dest}.${process.pid}.tmp`
+  fs.copyFileSync(source, tmp)
+  fs.chmodSync(tmp, 0o755)
+  fs.renameSync(tmp, dest)
+  return dest
 }
 
 function compareVersions(a: string, b: string): number {

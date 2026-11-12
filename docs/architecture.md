@@ -26,8 +26,9 @@ scripts    ─ agentwatch ask / emit ───────┘
 ## The daemon
 
 **One per OS user.** Codex's app-server socket can only be reached by its own user. A single shared daemon would also
-let one user inject replies into another user's agents. So each user gets their own daemon, socket and key. Nothing
-runs as root, and nothing listens on the network.
+let one user inject replies into another user's agents. So each user gets their own daemon, socket and token. (Users
+joined to one relay share its vault key; see Pairing below for what keeps them apart.) Nothing runs as root, and
+nothing listens on the network.
 
 - **Started on demand.** The first hook (or CLI command) that finds no socket spawns `agentwatch daemon`, detached. A
   live-socket check plus an `O_EXCL` lock file keeps it to one instance. This works without `systemd --user` or a
@@ -119,7 +120,9 @@ prompt.
 2. The link carries `#/pair/<pairId>.<secret>`.
 3. The phone claims the `pairId` once, gets a device token and the wrapped key, and unwraps it locally.
 
-`invite` and `join` do the same for another source.
+`invite` and `join` do the same for another source. Only the **owner** (the source that claimed the relay) can create
+pairings or rotate the key. Every source holds the vault key, so this keeps a joined OS user from pairing a phone of
+its own and using it to read or steer the others.
 
 ## Testing
 

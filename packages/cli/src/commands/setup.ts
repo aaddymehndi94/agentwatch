@@ -4,13 +4,14 @@
 
 import os from 'node:os'
 import path from 'node:path'
+import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { generateVaultKey } from '@agentwatch/protocol'
 import { call, ensureDaemon, waitForRelay } from '../client.ts'
-import { Config, loadConfig, saveConfig } from '../config.ts'
+import { Config, loadConfig, relayUrlProblem, saveConfig } from '../config.ts'
 import { socketAlive } from '../daemon/main.ts'
-import { type InstallReport, install, MIN_NODE_MAJOR, pickNode } from '../install.ts'
+import { type InstallReport, install, MIN_NODE_MAJOR, ownNodeCopy, pickNode, trustedBinary } from '../install.ts'
 import { type Paths, paths } from '../paths.ts'
 
 export const INSTALL_FLAGS = {
@@ -41,12 +42,23 @@ export async function setup(argv: string[]): Promise<number> {
     }
     cfg = existing
   } else {
-    const claimSecret = values['claim-secret'] ?? process.env.AGENTWATCH_CLAIM_SECRET
-    if (!relayUrl || !claimSecret) {
-      console.error('Usage: agentwatch setup --relay https://<your-relay> --claim-secret <secret>')
+    if (!relayUrl) {
+      console.error('Usage: agentwatch setup --relay https://<your-relay>   (it asks for the claim secret)')
       console.error(
         '       (no relay yet? `agentwatch relay deploy`; adding a second OS user or computer? `agentwatch join`)',
       )
+      return 64
+    }
+    const problem = relayUrlProblem(relayUrl)
+    if (problem) {
+      console.error(`--relay ${problem}.`)
+      return 64
+    }
+    // Asked for rather than taken from argv, where other users on this machine could read it in `ps`.
+    const claimSecret = values['claim-secret'] ?? process.env.AGENTWATCH_CLAIM_SECRET ?? (await askClaimSecret())
+    if (!claimSecret) {
+      console.error('Setup needs the relay’s claim secret (its CLAIM_SECRET). Set AGENTWATCH_CLAIM_SECRET, or run')
+      console.error('setup in a terminal and paste it when asked.')
       return 64
     }
     const claimed = await claimRelay(relayUrl, claimSecret)
@@ -56,6 +68,14 @@ export async function setup(argv: string[]): Promise<number> {
   const flags = applyFlags(cfg, values)
   if (!flags) return 64
   return finishSetup(p, flags, values, existing)
+}
+
+async function askClaimSecret(): Promise<string | undefined> {
+  if (!process.stdin.isTTY) return undefined
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  const answer = await new Promise<string>((r) => rl.question('Claim secret (the relay’s CLAIM_SECRET): ', r))
+  rl.close()
+  return answer.trim() || undefined
 }
 
 function nodeOk(): boolean {
@@ -119,7 +139,16 @@ export async function finishSetup(
     console.log(`✓ Saved ${tilde(p.configFile)} (mode 0600, holds this user's key)`)
   }
   const home = process.env.HOME || os.homedir()
-  const node = values.node ?? pickNode(home, process.env, process.execPath)
+  let node = values.node ?? pickNode(home, process.env, process.execPath, undefined, p.installDir)
+  if (values.node && !trustedBinary(values.node)) {
+    console.error(`--node ${values.node} can be changed by another user, so hooks won't run it.`)
+    return 1
+  }
+  if (!node) {
+    // No Node 22+ that only this user or root controls (say, setup run with another user's Node through sudo).
+    node = ownNodeCopy(p.installDir, process.execPath)
+    console.log(`✓ Copied Node ${process.versions.node} to ${tilde(node)}: this user has no Node 22+ of their own`)
+  }
   const bundleDir = path.dirname(fileURLToPath(import.meta.url))
   let report: InstallReport
   try {

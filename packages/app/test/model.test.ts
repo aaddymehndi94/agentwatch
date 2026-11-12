@@ -1,7 +1,7 @@
 import type { StateView } from '@agentwatch/protocol'
 import { bind, generateVaultKey, importVaultKey, seal } from '@agentwatch/protocol'
 import { describe, expect, it } from 'vitest'
-import { decryptState } from '../src/lib/model.ts'
+import { decryptEvents, decryptState } from '../src/lib/model.ts'
 
 async function state(key: CryptoKey, other: CryptoKey): Promise<StateView> {
   const now = Date.now()
@@ -33,7 +33,11 @@ async function state(key: CryptoKey, other: CryptoKey): Promise<StateView> {
         createdAt: now,
         status: 'open',
         answerable: true,
-        sealed: await seal(key, { title: 'Use Bash', tool: 'Bash', detail: 'ls' }, bind.request('a', 's1', 'r2')),
+        sealed: await seal(
+          key,
+          { title: 'Use Bash', tool: 'Bash', detail: 'ls' },
+          bind.request('a', { sessionId: 's1', id: 'r2', kind: 'permission' }),
+        ),
       },
       {
         sourceId: 'a',
@@ -44,6 +48,21 @@ async function state(key: CryptoKey, other: CryptoKey): Promise<StateView> {
         status: 'open',
         answerable: true,
         sealed: 'garbage',
+      },
+      // A permission the relay presents as a question.
+      {
+        sourceId: 'a',
+        id: 'r3',
+        sessionId: 's1',
+        kind: 'question',
+        createdAt: now + 1000,
+        status: 'open',
+        answerable: true,
+        sealed: await seal(
+          key,
+          { title: 'Use Bash', detail: 'ls' },
+          bind.request('a', { sessionId: 's1', id: 'r3', kind: 'permission' }),
+        ),
       },
     ],
   }
@@ -58,6 +77,26 @@ describe('decryptState', () => {
     expect(m.requests.map((r) => [r.id, r.seq, r.info?.detail ?? null])).toEqual([
       ['r1', 1, null],
       ['r2', 2, 'ls'],
+      ['r3', 3, null],
+    ])
+  })
+})
+
+describe('decryptEvents', () => {
+  it('shows only the asked-for session, even if the relay relabels another session’s event', async () => {
+    const key = await importVaultKey(generateVaultKey())
+    const at = Date.now()
+    const own = { sessionId: 's1', at, kind: 'done' }
+    const other = { sessionId: 's2', at: at + 1, kind: 'done' }
+    const events = [
+      { ...own, sealed: await seal(key, { text: 'mine' }, bind.event('a', own)) },
+      // Sealed for s2, relabelled as s1.
+      { ...other, sessionId: 's1', sealed: await seal(key, { text: 'theirs' }, bind.event('a', other)) },
+      { ...other, sealed: await seal(key, { text: 'theirs' }, bind.event('a', other)) },
+    ]
+    expect(await decryptEvents(events, 'a', 's1', key)).toEqual([
+      { at, kind: 'done', text: 'mine' },
+      { at: at + 1, kind: 'done' },
     ])
   })
 })

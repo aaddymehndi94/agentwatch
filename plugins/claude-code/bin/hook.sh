@@ -7,5 +7,6 @@ if [ -n "$AGENTWATCH_HOME" ]; then
 else
   launcher="${XDG_DATA_HOME:-$HOME/.local/share}/agentwatch/hook"
 fi
-[ -x "$launcher" ] || exit 0
+# Only a launcher this user owns: a HOME or XDG_DATA_HOME leaked from another account must not lead to theirs.
+[ -x "$launcher" ] && [ -O "$launcher" ] || exit 0
 exec "$launcher" "$@"

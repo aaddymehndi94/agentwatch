@@ -75,15 +75,17 @@ the app-server that Codex's TUI already uses.
 
 ### More OS users or computers
 
-Each OS user runs its own daemon, so one user's agents can't be steered from another account. Add users and computers
-to the same relay and phone:
+Each OS user runs its own daemon, so one user's agents can't be steered from another account. The OS user that ran
+`relay deploy` is the **owner**: phones are paired, and other users and computers invited, from there.
 
 ```sh
-agentwatch invite        # on a computer that is set up: prints a one-time invite
-agentwatch join          # on the other computer or OS user: paste the invite when asked
+agentwatch invite        # as the owner: prints a one-time invite
+agentwatch join          # on the other computer or OS user: paste the invite, then confirm
 ```
 
 `invite` prints the exact command for another OS user on the same machine. You run that one yourself, with sudo.
+`join` says what the relay's owner will be able to do with that user's agents, and asks before it joins. If that user
+has no Node 22+ of their own, `join` gives it a private copy, rather than running yours on every hook.
 
 Options for `relay deploy`, `setup` and `join`:
 
@@ -93,9 +95,12 @@ Options for `relay deploy`, `setup` and `join`:
 | `--no-messages` | Approvals and answers still work, but free-text replies from the phone are refused. |
 | `--no-claude` | Don't install the Claude Code plugin. |
 
-Already deployed the relay another way? Connect with
-`agentwatch setup --relay https://agentwatch.<you>.workers.dev --claim-secret <secret>`. The secret is the relay's
+Already deployed the relay another way? Connect with `agentwatch setup --relay https://agentwatch.<you>.workers.dev`
+and paste the relay's claim secret when asked (or set `AGENTWATCH_CLAIM_SECRET`). The secret is the relay's
 `CLAIM_SECRET`: set it with `npx wrangler secret put CLAIM_SECRET` in `packages/relay`.
+
+Lost the owner computer? Set a new claim secret that way, then run `agentwatch setup --force --relay <url>` on the new
+owner and paste it. That signs out every other computer and phone; pair and invite them again.
 
 ## Everyday use
 

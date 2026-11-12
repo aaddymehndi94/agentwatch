@@ -7,7 +7,15 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { type CommandBody, clip, projectFromCwd, type Question, type RequestInfo } from '@agentwatch/protocol'
+import {
+  type CommandBody,
+  clip,
+  DETAIL_MAX,
+  literal,
+  projectFromCwd,
+  type Question,
+  type RequestInfo,
+} from '@agentwatch/protocol'
 import WebSocket from 'ws'
 import type { AgentAdapter, Core, HeldRequest } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
@@ -466,13 +474,14 @@ export class CodexAdapter implements AgentAdapter {
     let reply: (body: CommandBody) => Json | null
     switch (method) {
       case 'item/commandExecution/requestApproval': {
-        const cmd = unwrapShell(typeof params.command === 'string' ? params.command : '')
+        const cmd = literal(unwrapShell(typeof params.command === 'string' ? params.command : ''), DETAIL_MAX)
         const reason = typeof params.reason === 'string' ? params.reason : ''
         info = {
           title: 'Run a command',
           tool: 'shell',
-          detail: [cmd, reason && `# ${reason}`].filter(Boolean).join('\n'),
+          detail: [cmd.text, reason && `# ${clip(reason, 300)}`].filter(Boolean).join('\n'),
         }
+        if (cmd.cut) answerable = false
         reply = (b) => (b.kind === 'decide' ? { decision: b.behavior === 'allow' ? 'accept' : 'decline' } : null)
         break
       }

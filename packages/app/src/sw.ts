@@ -91,39 +91,60 @@ function parsePayload(data: PushMessageData | null): PushPayload {
 
 // ── Push ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-async function describe(p: PushPayload): Promise<PushInfo> {
-  if (p.title && p.body !== undefined) return { title: p.title, body: p.body }
+/**
+ * What to show, and whether it came sealed from one of your computers. Only a push whose seal opens under all of its
+ * clear fields (source, tag, kind, session, request, actions) is `verified`. The relay can still show a notification of
+ * its own (it says when a computer went offline), but never one with Approve or Deny on it.
+ */
+async function describe(p: PushPayload): Promise<{ info: PushInfo; verified: boolean }> {
   const generic: PushInfo = {
     title: p.kind === 'needs_you' ? 'An agent needs you' : p.kind === 'done' ? 'An agent finished' : 'AgentWatch',
     body: 'Open AgentWatch to see details.',
   }
-  if (!p.sealed || !p.sourceId) return generic
+  if (!p.sealed) {
+    return { info: p.title && p.body !== undefined ? { title: p.title, body: p.body } : generic, verified: false }
+  }
+  if (!p.sourceId) return { info: generic, verified: false }
   try {
     const creds = await loadCredentials()
-    if (!creds) return generic
-    const info = await open<PushInfo>(await vaultKey(creds.vaultKey), p.sealed, bind.push(p.sourceId, p.tag))
-    if (typeof info?.title !== 'string' || typeof info.body !== 'string') return generic
-    return { title: info.title.slice(0, 200), body: info.body.slice(0, 1000) }
+    if (!creds) return { info: generic, verified: false }
+    const info = await open<PushInfo>(await vaultKey(creds.vaultKey), p.sealed, bind.push(p.sourceId, p))
+    if (typeof info?.title !== 'string' || typeof info.body !== 'string') return { info: generic, verified: false }
+    return { info: { title: info.title.slice(0, 200), body: info.body.slice(0, 1000) }, verified: true }
   } catch {
-    return generic
+    return { info: generic, verified: false }
   }
+}
+
+/** Approve and Deny only for a verified permission push that names its own request. */
+function canAct(p: PushPayload, verified: boolean): boolean {
+  return (
+    verified &&
+    p.kind === 'needs_you' &&
+    p.actions === true &&
+    !!p.sourceId &&
+    !!p.sessionId &&
+    !!p.requestId &&
+    p.tag === `req:${p.requestId}`
+  )
 }
 
 self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       const payload = parsePayload(event.data)
-      const info = await describe(payload)
+      const { info, verified } = await describe(payload)
+      const act = canAct(payload, verified)
       const options: NotificationOptions & { renotify?: boolean; actions?: { action: string; title: string }[] } = {
         body: info.body,
         tag: payload.tag,
         renotify: true,
         icon: '/icons/icon-192.png',
         badge: '/icons/badge-96.png',
-        data: payload,
+        data: { ...payload, actions: act },
         requireInteraction: payload.kind === 'needs_you',
       }
-      if (payload.actions && payload.requestId) {
+      if (act) {
         options.actions = [
           { action: 'deny', title: 'Deny' },
           { action: 'approve', title: 'Approve' },
@@ -139,7 +160,7 @@ self.addEventListener('notificationclick', (event) => {
   const n = event.notification
   const p = n.data as PushPayload | undefined
   n.close()
-  if (p && (event.action === 'approve' || event.action === 'deny') && p.sourceId && p.sessionId && p.requestId) {
+  if (p?.actions === true && (event.action === 'approve' || event.action === 'deny')) {
     event.waitUntil(decideFromNotification(p, event.action === 'approve' ? 'allow' : 'deny', n.title))
     return
   }

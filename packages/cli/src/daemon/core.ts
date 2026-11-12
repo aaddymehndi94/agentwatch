@@ -262,6 +262,9 @@ export class Core {
     if (req.status !== 'open') return this.ack(env.commandId, 'rejected', alreadyClosed(req.status))
     if (!req.answerable) return this.ack(env.commandId, 'rejected', 'This request can only be answered at the computer')
     if (body.kind === 'answer' && req.kind !== 'question') return this.ack(env.commandId, 'rejected', 'Not a question')
+    if (body.kind === 'decide' && req.kind !== 'permission') {
+      return this.ack(env.commandId, 'rejected', 'A question needs an answer, not approval')
+    }
     const how =
       body.kind === 'answer'
         ? 'Answered from phone'
@@ -357,17 +360,19 @@ export class Core {
     const sendPush = () => {
       this.pushTimers.delete(intent.requestId ?? '')
       if (intent.requestId && this.requests.get(intent.requestId)?.status !== 'open') return
-      const tag = intent.tag
+      const clear = {
+        tag: intent.tag,
+        kind: intent.kind,
+        sessionId: s.id,
+        ...(intent.requestId ? { requestId: intent.requestId } : {}),
+        actions: intent.actions && !!req?.answerable,
+      }
       this.enqueue(async () => ({
         t: 'push',
         push: {
-          tag,
-          kind: intent.kind,
+          ...clear,
           urgency: intent.urgency,
-          sessionId: s.id,
-          ...(intent.requestId ? { requestId: intent.requestId } : {}),
-          actions: intent.actions && !!req?.answerable,
-          sealed: await seal(this.o.key, intent.info, bind.push(this.o.sourceId, tag)),
+          sealed: await seal(this.o.key, intent.info, bind.push(this.o.sourceId, clear)),
         },
       }))
     }
@@ -433,11 +438,7 @@ export class Core {
       status: r.status,
       closedAt: r.closedAt,
       answerable: r.answerable,
-      sealed: await seal(
-        this.o.key,
-        this.visibleRequest(r.info, r.kind),
-        bind.request(this.o.sourceId, r.sessionId, r.id),
-      ),
+      sealed: await seal(this.o.key, this.visibleRequest(r.info, r.kind), bind.request(this.o.sourceId, r)),
     }
   }
 
@@ -461,17 +462,11 @@ export class Core {
 
   /** A test notification to every paired phone, sealed like any other push. */
   async testPush(where: string): Promise<Extract<SourceMessage, { t: 'push' }>> {
-    const tag = 'test'
+    const clear = { tag: 'test', kind: 'test', actions: false } as const
     const info = { title: 'AgentWatch test', body: `Notifications work. Sent from ${where}.` }
     return {
       t: 'push',
-      push: {
-        tag,
-        kind: 'test',
-        urgency: 'normal',
-        actions: false,
-        sealed: await seal(this.o.key, info, bind.push(this.o.sourceId, tag)),
-      },
+      push: { ...clear, urgency: 'normal', sealed: await seal(this.o.key, info, bind.push(this.o.sourceId, clear)) },
     }
   }
 

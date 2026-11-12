@@ -1,0 +1,8 @@
+# Served by Cloudflare Workers Static Assets with every page of the app. The app only talks to its own relay, runs only
+# its own scripts, and is never framed, so a hostile page can't overlay it or pull your key out through it.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

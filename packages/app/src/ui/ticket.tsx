@@ -117,7 +117,8 @@ function Body({ req }: { req: RequestVM }) {
 
 function Footer({ req, session, pending }: { req: RequestVM; session: SessionVM | undefined; pending?: Pending }) {
   if (pending) return <PendingStatus id={req.id} pending={pending} />
-  if (!req.answerable) {
+  // A request this phone can't open is one it can't vouch for, so it gets no buttons.
+  if (!req.answerable || !req.info) {
     return (
       <div class="ticket-status">
         <Alert />
