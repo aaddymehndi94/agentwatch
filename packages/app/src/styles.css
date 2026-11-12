@@ -909,6 +909,31 @@ code,
   outline: none;
 }
 
+.composer .quick {
+  display: flex;
+  gap: 8px;
+  margin: 0 calc(-1 * var(--gutter)) 8px;
+  padding: 0 var(--gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+  list-style: none;
+}
+
+.composer .quick button {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1.5px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.composer .quick button:active {
+  background: var(--rule-paper);
+}
+
 .composer .why {
   font-size: 13.5px;
   color: var(--ink-2);

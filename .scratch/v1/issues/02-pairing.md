@@ -4,10 +4,12 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] protocol: pairing wrap/unwrap (HKDF + AES-GCM, pair id as associated data); tests including an expired/claimed pairing
-- [ ] relay: pair.create over the source WS; `POST /api/pair/claim` one-time; `GET/DELETE /api/devices`
-- [ ] cli: `agentwatch pair` (terminal QR + link + expiry)
-- [ ] app: Pair screen (link route + paste-link field), iOS "Add to Home Screen first" guidance, error states (expired, already used, offline)
-- [ ] E2E: harness pairs a fake device through the real flow and reads decrypted state
+- [x] protocol: pairing wrap/unwrap (HKDF + AES-GCM, pair id as associated data); tests including an expired/claimed pairing
+- [x] relay: pair.create over the source WS; `POST /api/pair/claim` one-time; `GET/DELETE /api/devices`
+- [x] cli: `agentwatch pair` (terminal QR + link + expiry)
+- [x] app: Pair screen (link route + paste-link field), iOS "Add to Home Screen first" guidance, error states (expired, already used, offline)
+- [x] E2E: harness pairs a fake device through the real flow and reads decrypted state
+
+**Notes:** Covered by the E2E harness (`packages/cli/test/e2e.test.ts`): a fake phone pairs through the real daemon and relay, a pairing code works once (second claim → 410), and a phone removed from Settings gets 401 straight away. The pair screen was checked at 390×844 in both themes. The real-phone run (Android + iPhone Home Screen) is part of the morning hand-off.

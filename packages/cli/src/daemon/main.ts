@@ -205,7 +205,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
     },
   })
 
-  const handler: Handler = async ({ method, path, body, signal }) => {
+  const handler: Handler = async ({ method, path, query, body, signal }) => {
     if (method === 'POST' && path.startsWith('/v1/hook/')) {
       const agent = path.slice('/v1/hook/'.length)
       if (agent !== 'claude') return { status: 404, body: { error: `unknown agent ${agent}` } }
@@ -275,6 +275,21 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
       const code = formatPairingCode(secret)
       const link = `${cfg.relayUrl.replace(/\/+$/, '')}/#/pair/${code}`
       return { status: 200, body: { code, link, expiresAt } }
+    }
+    if (path === '/v1/bridge/claude' && method === 'GET') {
+      if (!cfg.claude.enabled) return { status: 404, body: { error: 'Claude is turned off in the AgentWatch config' } }
+      const session = query.get('session') ?? ''
+      const loop = query.get('loop') ?? ''
+      if (!session || !loop) return { status: 400, body: { error: 'session and loop are required' } }
+      const r = await claude.bridge.poll(session, loop, signal)
+      if (r === 'superseded') return { status: 410, body: { error: 'a newer bridge took over this session' } }
+      return r.length ? { status: 200, body: { messages: r } } : { status: 204 }
+    }
+    if (path === '/v1/bridge/claude/ack' && method === 'POST') {
+      const a = z
+        .object({ session: z.string(), id: z.string(), ok: z.boolean(), error: z.string().max(500).optional() })
+        .parse(body ?? {})
+      return { status: claude.bridge.ack(a.session, a.id, a.ok, a.error) ? 200 : 404, body: {} }
     }
     if (method === 'POST' && path === '/v1/test-push') {
       if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay' } }

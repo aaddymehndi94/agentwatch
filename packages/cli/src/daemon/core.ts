@@ -470,7 +470,13 @@ export class Core {
     for (const s of list) {
       if (this.sessions.has(s.id) || now - s.updatedAt > maxAgeMs) continue
       const state = s.state === 'needs_you' ? (s.turnStartedAt !== null ? 'working' : 'idle') : s.state
-      this.sessions.set(s.id, { ...s, state, openRequests: [] })
+      // Adapters re-assert what a session can do once they hear from it again.
+      this.sessions.set(s.id, {
+        ...s,
+        state,
+        openRequests: [],
+        caps: { reply: false, replyReason: 'Not connected yet' },
+      })
     }
   }
 

@@ -5,6 +5,7 @@
 import { clip, projectFromCwd, type Question, type RequestInfo } from '@agentwatch/protocol'
 import type { AgentAdapter, Core, Outcome } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
+import { ClaudeBridge, type Delivery, NOT_CONNECTED } from './claude-bridge.ts'
 
 export interface ClaudeAdapterOptions {
   /** How long a PermissionRequest is held for the phone. Must stay under the plugin hook's own timeout. */
@@ -20,11 +21,27 @@ const DENY_MESSAGE = 'The user denied this from their phone.'
 export class ClaudeAdapter implements AgentAdapter {
   readonly agent = 'claude' as const
   private seenVersion = ''
+  /** Phone replies go out through the plugin's mod, which long-polls this bridge. */
+  readonly bridge: ClaudeBridge
 
   constructor(
     private core: Core,
     private o: ClaudeAdapterOptions,
-  ) {}
+  ) {
+    this.bridge = new ClaudeBridge({ onLink: (sid) => this.syncCaps(sid) })
+  }
+
+  message(sessionId: string, text: string): Promise<Delivery> {
+    return this.bridge.send(sessionId, text)
+  }
+
+  stop(): void {
+    this.bridge.stop()
+  }
+
+  private syncCaps(sid: string): void {
+    this.core.setCaps(sid, this.bridge.connected(sid) ? { reply: true } : { reply: false, replyReason: NOT_CONNECTED })
+  }
 
   describe(): string {
     return this.seenVersion ? `claude ${this.seenVersion}` : 'claude'
@@ -41,6 +58,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const now = Date.now()
     const cwd = typeof p.cwd === 'string' ? p.cwd : undefined
     this.core.ensure('claude', sid, { cwd, project: projectFromCwd(cwd) })
+    this.syncCaps(sid)
 
     switch (event) {
       case 'SessionStart': {

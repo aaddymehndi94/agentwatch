@@ -145,6 +145,9 @@ function useEvents(app: AppState, sourceId: string, sessionId: string, version: 
   return events
 }
 
+/** Common follow-ups. A tap fills the box, so nothing is sent until you press Send. */
+const QUICK_REPLIES = ['Continue', 'Yes, go ahead', 'Summarize']
+
 function Composer({ app, sourceId, sessionId }: { app: AppState; sourceId: string; sessionId: string }) {
   const s = app.model?.sessions.find((x) => x.sourceId === sourceId && x.id === sessionId)
   const [text, setText] = useState('')
@@ -167,6 +170,23 @@ function Composer({ app, sourceId, sessionId }: { app: AppState; sourceId: strin
   }
   return (
     <div class="composer">
+      {!text && (
+        <ul class="quick" aria-label="Quick replies">
+          {QUICK_REPLIES.map((q) => (
+            <li key={q}>
+              <button
+                type="button"
+                onClick={() => {
+                  setText(q)
+                  document.getElementById('reply')?.focus()
+                }}
+              >
+                {q}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form onSubmit={submit}>
         <label class="visually-hidden" for="reply">
           Reply to {agentLabel(s.agent)}

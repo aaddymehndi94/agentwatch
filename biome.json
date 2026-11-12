@@ -11,7 +11,8 @@
       "!**/.wrangler",
       "!**/test/fixtures",
       "!packages/relay/src/runtime.d.ts",
-      "!**/*.md"
+      "!**/*.md",
+      "!plugins/claude-code/.claude-plugin/types"
     ]
   },
   "formatter": {

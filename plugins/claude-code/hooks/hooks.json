@@ -1,5 +1,6 @@
 {
-  "description": "AgentWatch hooks. They fail open: if AgentWatch is not set up or its daemon is down they exit 0 with no output.",
+  "description": "AgentWatch hooks. They fail open: if AgentWatch is not set up or its daemon is down they exit 0 with no output. The mod (bridge.ts) delivers replies you send from your phone into idle sessions.",
+  "modules": ["./bridge.ts"],
   "hooks": {
     "SessionStart": [
       {

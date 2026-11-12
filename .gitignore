@@ -15,3 +15,5 @@ coverage/
 spikes/
 .claude/skills/impeccable/scripts/bin/
 .claude/worktrees/
+# written by Claude Code when it loads the plugin's mod
+plugins/claude-code/.claude-plugin/types/

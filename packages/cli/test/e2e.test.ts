@@ -259,3 +259,70 @@ describe('pairing, phones and notifications', () => {
     expect(r.code).toBe(1)
   }, 30_000)
 })
+
+describe('phone replies into Claude', () => {
+  const RID = 'reply-session'
+  const modPoll = (loop: string) =>
+    call<{ messages: { id: string; text: string }[] }>(
+      'GET',
+      `/v1/bridge/claude?session=${RID}&loop=${loop}`,
+      undefined,
+      { socket: socketOf(home), timeoutMs: 40_000 },
+    )
+  const replySession = async () => (await phone.state()).sessions.find((x) => x.id === RID)
+
+  it('an idle session whose plugin mod is polling takes a reply from the phone as its next prompt', async () => {
+    // The recorded session started before hooks were on, so SessionStart is synthesized from its first event.
+    const first = fixture[0]!
+    await hook(home, { session_id: RID, cwd: first.cwd, hook_event_name: 'SessionStart', source: 'startup' })
+    const poll = modPoll('loop-1')
+    const s = await waitFor('reply capability', async () => {
+      const x = await replySession()
+      return x?.caps.reply ? x : undefined
+    })
+    expect(s.state).toBe('idle')
+    const cmd = await phone.command({
+      sourceId,
+      sessionId: RID,
+      body: { kind: 'message', text: 'Now run the linter.' },
+    })
+    const r = await poll
+    expect(r.status).toBe(200)
+    const m = r.body.messages[0]!
+    expect(m.text).toBe('Now run the linter.')
+    const ack = await call(
+      'POST',
+      '/v1/bridge/claude/ack',
+      { session: RID, id: m.id, ok: true },
+      { socket: socketOf(home) },
+    )
+    expect(ack.status).toBe(200)
+    await waitFor('applied', async () => (await phone.commandStatus(cmd)).status === 'applied')
+    // Claude then runs the prompt like any other: the session is busy and can't take another reply.
+    await hook(home, { ...byEvent('UserPromptSubmit'), session_id: RID, prompt: 'Now run the linter.' })
+    const busy = await waitFor('working', async () => {
+      const x = await replySession()
+      return x?.state === 'working' ? x : undefined
+    })
+    expect(busy.caps).toEqual({ reply: false, replyReason: 'You can reply when the agent is idle' })
+    const refused = await phone.command({ sourceId, sessionId: RID, body: { kind: 'message', text: 'and this?' } })
+    await waitFor('rejected', async () => (await phone.commandStatus(refused)).status === 'rejected')
+  }, 60_000)
+
+  it('a reloaded plugin takes over the session and the old mod loop is told to stop', async () => {
+    // loop-2 stays parked on the daemon; it is cut off when the daemon stops at the end of the file.
+    modPoll('loop-2').catch(() => {})
+    await new Promise((r) => setTimeout(r, 200))
+    expect((await modPoll('loop-1')).status).toBe(410)
+  }, 60_000)
+
+  it('a session without the mod says why it cannot take replies', async () => {
+    await hook(home, { ...byEvent('Stop'), session_id: 'second-session' })
+    const s = await waitFor('idle', async () => {
+      const x = (await phone.state()).sessions.find((y) => y.id === 'second-session')
+      return x?.state === 'idle' ? x : undefined
+    })
+    expect(s.caps.reply).toBe(false)
+    expect(s.caps.replyReason).toMatch(/AgentWatch plugin/)
+  }, 30_000)
+})
