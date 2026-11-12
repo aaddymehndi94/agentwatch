@@ -14,7 +14,7 @@ import {
 } from '../lib/model.ts'
 import { type AppState, refresh, setMuteLocal } from '../lib/store.ts'
 import { ago, clock } from '../lib/time.ts'
-import { BellOff, Gear, Offline } from '../ui/icons.tsx'
+import { BellOff, Check, Gear, Offline } from '../ui/icons.tsx'
 import { Ticket } from '../ui/ticket.tsx'
 
 const STATE_ORDER: Record<string, number> = { needs_you: 0, working: 1, idle: 2, unknown: 3, ended: 4 }
@@ -112,15 +112,20 @@ function Board({ model, app, now, go }: { model: Model; app: AppState; now: numb
   return (
     <>
       <section class="rail-section" aria-labelledby="rail-h">
-        <div class="section-head">
-          <h2 id="rail-h">
-            Waiting on you
-            {open.length > 0 && <span class="count">{open.length}</span>}
-          </h2>
-        </div>
         {open.length === 0 ? (
-          <p class="rail-empty">Nothing waiting on you.</p>
+          <h2 id="rail-h" class="rail-empty">
+            <Check />
+            Nothing waiting on you
+          </h2>
         ) : (
+          <div class="section-head">
+            <h2 id="rail-h">
+              Waiting on you
+              <span class="count">{open.length}</span>
+            </h2>
+          </div>
+        )}
+        {open.length > 0 && (
           <Rail count={open.length}>
             {open.map((r) => (
               <Ticket
@@ -195,7 +200,7 @@ function SourceGroup({
     .sort((a, b) => (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || b.stateSince - a.stateSince)
   const ended = sessions.filter((s) => s.state === 'ended').sort((a, b) => b.stateSince - a.stateSince)
   return (
-    <section aria-label={sourceLabel(source)}>
+    <section aria-label={sourceLabel(source)} class={source.online ? undefined : 'stale'}>
       <div class="group-head">
         <span class={`dot ${source.online ? '' : 'off'}`} />
         <span class="who">{sourceLabel(source)}</span>
@@ -204,6 +209,7 @@ function SourceGroup({
           {source.privacy === 'summary' ? ' · summary' : ''}
         </span>
       </div>
+      {!source.online && live.length > 0 && <p class="stale-note">Showing what it last reported.</p>}
       <ul class="rows">
         {live.length === 0 && (
           <li class="more" style={{ cursor: 'default', display: 'flex', alignItems: 'center' }}>

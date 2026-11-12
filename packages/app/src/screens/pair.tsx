@@ -1,6 +1,7 @@
 // Pairing: claim the one-time code from `agentwatch pair`, then turn on notifications and send a test.
 // iPhone: push only works from the Home Screen app, which has its own storage, so pair *inside* the installed app.
 
+import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
 import { enablePush, isIos, isStandalone, pushSupport, testPush } from '../lib/push.ts'
 import { type AppState, pairWithCode } from '../lib/store.ts'
@@ -24,22 +25,28 @@ function Claim({ initial }: { initial?: string }) {
   const [code, setCode] = useState(initial ?? '')
   const [name, setName] = useState(defaultName())
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<ComponentChildren>(null)
   const submit = async (e: Event) => {
     e.preventDefault()
     setBusy(true)
-    setError('')
+    setError(null)
     try {
       await pairWithCode(code, name.trim() || defaultName())
       history.replaceState(null, '', '#/pair')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(
-        /expired|used/i.test(msg)
-          ? 'That code has expired or was already used. Run `agentwatch pair` again for a new one.'
-          : /pairing code/i.test(msg)
-            ? 'That doesn’t look like a pairing code. Copy the whole code shown by `agentwatch pair`.'
-            : msg,
+        /expired|used/i.test(msg) ? (
+          <>
+            That code has expired or was already used. Run <code>agentwatch pair</code> again for a new one.
+          </>
+        ) : /pairing code/i.test(msg) ? (
+          <>
+            That doesn’t look like a pairing code. Copy the whole code that <code>agentwatch pair</code> shows.
+          </>
+        ) : (
+          msg
+        ),
       )
     } finally {
       setBusy(false)
@@ -49,9 +56,14 @@ function Claim({ initial }: { initial?: string }) {
     <div class="page">
       <h1 class="hero-title">{initial ? 'Pair this phone' : 'Connect to your agents'}</h1>
       <p class="lede">
-        {initial
-          ? `Your computer created a one-time code for ${location.host}. Pairing gives this phone the key to read your agents’ activity and answer them.`
-          : 'On your computer, run `agentwatch pair` and scan the QR code. Or paste the code it shows here.'}
+        {initial ? (
+          `Your computer created a one-time code for ${location.host}. Pairing gives this phone the key to read your agents’ activity and answer them.`
+        ) : (
+          <>
+            On your computer, run <code>agentwatch pair</code> and scan the QR code with this phone. Or paste the code
+            it shows here.
+          </>
+        )}
       </p>
       <form onSubmit={submit}>
         {!initial && (
@@ -195,6 +207,22 @@ function Notifications({ app, go }: { app: AppState; go: (hash: string) => void 
       <button type="button" class="btn quiet block" style={{ marginTop: 12 }} onClick={() => go('#/')}>
         {step === 'ask' && support === 'ok' ? 'Skip for now' : 'Go to inbox'}
       </button>
+    </div>
+  )
+}
+
+/** A `#/join/…` invite is for a computer (`agentwatch join`), not a phone. Say so instead of a confusing pair form. */
+export function JoinOnPhone() {
+  return (
+    <div class="page">
+      <h1 class="hero-title">This invite is for a computer</h1>
+      <p class="lede">
+        It adds another computer or OS user to your relay. On that computer, run <code>agentwatch join</code> and paste
+        the whole link when it asks.
+      </p>
+      <p class="fine">
+        To pair a phone instead, run <code>agentwatch pair</code> on a computer that is already set up.
+      </p>
     </div>
   )
 }

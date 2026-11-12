@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { useApp } from './lib/store.ts'
 import { Inbox } from './screens/inbox.tsx'
-import { PairScreen } from './screens/pair.tsx'
+import { JoinOnPhone, PairScreen } from './screens/pair.tsx'
 import { SessionScreen } from './screens/session.tsx'
 import { SettingsScreen } from './screens/settings.tsx'
 
@@ -39,6 +39,13 @@ export function App() {
   const now = useNow()
   if (!app.booted) return null
 
+  if (hash.startsWith('#/join/')) {
+    return (
+      <main class="app">
+        <JoinOnPhone />
+      </main>
+    )
+  }
   const pair = /^#\/pair(?:\/(.+))?$/.exec(hash)
   if (pair || (!app.creds && !app.demo) || app.revoked) {
     return (

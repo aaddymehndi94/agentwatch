@@ -5,7 +5,7 @@ import { buildCommand, importVaultKey, parsePairingCode, unwrapVaultKey } from '
 import { useEffect, useState } from 'preact/hooks'
 import { ApiError, api, getState } from './api.ts'
 import { type Credentials, kv, loadCredentials, saveCredentials } from './db.ts'
-import { demoModel } from './demo.ts'
+import { type DemoVariant, demoModel } from './demo.ts'
 import { decryptState, type Model, vaultKey } from './model.ts'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -80,7 +80,16 @@ export async function boot(): Promise<void> {
   const theme = (themeParam ?? (await kv.get<Theme>('theme').catch(() => undefined)) ?? 'system') as Theme
   applyTheme(theme)
   if (demo) {
-    set({ booted: true, demo: true, theme, model: demoModel(), lastSync: Date.now() })
+    const variant = (params.get('demo') || 'full') as DemoVariant
+    const offline = variant === 'offline'
+    set({
+      booted: true,
+      demo: true,
+      theme,
+      model: demoModel(Date.now(), variant),
+      lastSync: Date.now() - (offline ? 6 * 60_000 : 0),
+      error: offline ? 'Can’t reach your relay. Check your connection.' : null,
+    })
     return
   }
   const creds = (await loadCredentials().catch(() => undefined)) ?? null

@@ -5,7 +5,12 @@ import type { EventVM, Model, RequestVM, SessionVM } from './model.ts'
 
 const min = 60_000
 
-export function demoModel(now = Date.now()): Model {
+/** `?demo` variants, for trying states without a relay: `calm` (nothing waiting), `new` (no computers yet),
+ * `offline` (the relay can't be reached; set up in the store). */
+export type DemoVariant = 'full' | 'calm' | 'new' | 'offline'
+
+export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Model {
+  if (variant === 'new') return { serverTime: now, skew: 0, mute: null, sources: [], sessions: [], requests: [] }
   const sources: SourceView[] = [
     src('laptop-a', 'dev', 'laptop', 'full', true),
     src('laptop-b', 'dev-work', 'laptop', 'summary', true),
@@ -87,6 +92,10 @@ export function demoModel(now = Date.now()): Model {
       },
     },
   ]
+  if (variant === 'calm') {
+    for (const s of sessions) if (s.state === 'needs_you') s.state = 'working'
+    return { serverTime: now, skew: 0, mute: null, sources, sessions, requests: [] }
+  }
   return { serverTime: now, skew: 0, mute: null, sources, sessions, requests }
 }
 
@@ -143,7 +152,11 @@ function sess(
     startedAt: since - 30 * min,
     turnStartedAt: state === 'working' || state === 'needs_you' ? since : null,
     updatedAt: since,
-    caps: { reply: false, replyReason: 'You can reply when the agent is idle' },
+    // What the daemon would say: generic agents never take replies; others can once they are idle.
+    caps:
+      agent === 'generic'
+        ? { reply: false, replyReason: 'This agent can’t take replies' }
+        : { reply: false, replyReason: 'You can reply when the agent is idle' },
     info,
   }
 }

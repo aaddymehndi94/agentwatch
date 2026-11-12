@@ -62,14 +62,19 @@ export function SessionScreen(props: {
         </div>
       ) : (
         <div class="page">
+          {source && !source.online && (
+            <p class="stale-note">
+              {sourceLabel(source)} has been offline for {ago(source.lastSeen, t)}. This is what it last reported.
+            </p>
+          )}
           <div class="session-head">
             {s.info?.title && s.info.title !== projectName(s) && <h2>{s.info.title}</h2>}
             <p class="sub">
               <span class={`state ${s.state}`}>{STATE_LABEL[s.state]}</span>
               <span>
-                {s.state === 'working' && s.turnStartedAt
-                  ? `for ${duration(t - s.turnStartedAt)}`
-                  : `since ${ago(s.stateSince, t)} ago`}
+                {s.state === 'ended'
+                  ? `${ago(s.stateSince, t)} ago`
+                  : `for ${s.state === 'working' && s.turnStartedAt ? duration(t - s.turnStartedAt) : ago(s.stateSince, t)}`}
               </span>
               <span>{agentLabel(s.agent)}</span>
               <span class="mono">{sourceLabel(source)}</span>
@@ -114,7 +119,7 @@ export function SessionScreen(props: {
               </ol>
             </>
           )}
-          <Composer app={app} sourceId={sourceId} sessionId={sessionId} />
+          <Composer app={app} sourceId={sourceId} sessionId={sessionId} offline={!!source && !source.online} />
         </div>
       )}
     </>
@@ -148,12 +153,20 @@ function useEvents(app: AppState, sourceId: string, sessionId: string, version: 
 /** Common follow-ups. A tap fills the box, so nothing is sent until you press Send. */
 const QUICK_REPLIES = ['Continue', 'Yes, go ahead', 'Summarize']
 
-function Composer({ app, sourceId, sessionId }: { app: AppState; sourceId: string; sessionId: string }) {
+function Composer(props: { app: AppState; sourceId: string; sessionId: string; offline: boolean }) {
+  const { app, sourceId, sessionId } = props
   const s = app.model?.sessions.find((x) => x.sourceId === sourceId && x.id === sessionId)
   const [text, setText] = useState('')
   const key = `msg:${sessionKey(sourceId, sessionId)}`
   const pending = app.pending[key]
   if (!s || s.state === 'ended') return null
+  if (props.offline && !pending) {
+    return (
+      <div class="composer">
+        <p class="why">Replies can’t reach this computer while it’s offline.</p>
+      </div>
+    )
+  }
   if (!s.caps.reply) {
     return (
       <div class="composer">

@@ -5,7 +5,7 @@ import { useState } from 'preact/hooks'
 import { agentLabel, projectName, type RequestVM, type SessionVM, sourceLabel } from '../lib/model.ts'
 import { clearPending, type Pending, sendCommand } from '../lib/store.ts'
 import { clock, duration, heat } from '../lib/time.ts'
-import { Alert, Check, Cross } from './icons.tsx'
+import { Alert, Check, Cross, Offline } from './icons.tsx'
 
 function heatStyle(h: number): Record<string, string> {
   // neutral → amber over the first half of the log scale, amber → red over the second.
@@ -50,21 +50,57 @@ export function Ticket(props: {
         </span>
       </p>
       <Body {...props} />
+      {source && !source.online && req.status === 'open' && !pending && (
+        <div class="ticket-status">
+          <Offline />
+          <p>
+            {sourceLabel(source)} is offline. An answer reaches it only if it reconnects within 5 minutes; until then,
+            the agent keeps waiting.
+          </p>
+        </div>
+      )}
       <Footer req={req} session={session} pending={pending} />
     </article>
+  )
+}
+
+/** Literal text (a command, a path) that wraps only between tokens, so `--env` never splits into `-` / `-env`. Copying
+ * it gives back exactly the original. Tokens too long for a line still break anywhere. */
+function Literal({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\s+)/).map((t, i) =>
+        t.length > 0 && t.length <= 36 && !/\s/.test(t) ? (
+          <span key={i} class="tok">
+            {t}
+          </span>
+        ) : (
+          t
+        ),
+      )}
+    </>
   )
 }
 
 function Body({ req }: { req: RequestVM }) {
   const info = req.info
   if (!info) return <p class="hidden-note">This request couldn’t be decrypted on this phone.</p>
+  // Agents with a tool (Claude, Codex) put it in `tool` and the literal in `detail`. A script's `agentwatch ask`
+  // puts its own question in `title`.
+  const asked = !info.tool && req.kind === 'permission' ? <p class="question">{info.title}</p> : null
+  const detail = info.detail ? (
+    <pre class="proof">
+      <span class="proof-label">{info.tool ?? 'Details'}</span>
+      <Literal text={info.detail} />
+    </pre>
+  ) : null
   if (req.kind === 'question') {
     if (!info.questions?.length) {
       return <p class="hidden-note">Details stay on the computer (summary privacy). Answer it there.</p>
     }
-    return null // rendered by the footer, which owns the selection
+    return detail // the question itself is rendered by the footer, which owns the selection
   }
-  if (!info.detail) {
+  if (!detail && !asked) {
     return (
       <p class="hidden-note">
         Wants to use <strong>{info.tool ?? 'a tool'}</strong>. Details stay on the computer (summary privacy).
@@ -72,10 +108,10 @@ function Body({ req }: { req: RequestVM }) {
     )
   }
   return (
-    <pre class="proof">
-      <span class="proof-label">{info.tool ?? 'Tool'}</span>
-      {info.detail}
-    </pre>
+    <>
+      {asked}
+      {detail}
+    </>
   )
 }
 

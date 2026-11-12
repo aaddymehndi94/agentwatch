@@ -205,15 +205,14 @@ function Machines({ app, now }: { app: AppState; now: number }) {
           </div>
         )}
         {sources.map((s) => (
-          <div class="item" key={s.id}>
+          <div class="item top" key={s.id}>
             <span class={`dot ${s.online ? '' : 'off'}`} />
             <span class="grow">
               <span class="label mono">{sourceLabel(s)}</span>
+              <span class="hint">{s.online ? 'Online' : `Offline · last seen ${ago(s.lastSeen, now)} ago`}</span>
               <span class="hint">
-                {s.online ? 'Online' : `Offline · last seen ${ago(s.lastSeen, now)} ago`}
-                {' · '}
                 {s.privacy === 'summary' ? 'Summary privacy: no text leaves it' : 'Full detail'}
-                {s.allowMessages ? '' : ' · replies off'}
+                {s.allowMessages ? '' : ' · No replies'}
               </span>
               <span class="hint">
                 {Object.values(s.adapters).join(', ') || 'No agents yet'}

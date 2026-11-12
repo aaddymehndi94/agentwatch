@@ -204,6 +204,14 @@ code,
   font-size: 13px;
   color: var(--ink-2);
   cursor: pointer;
+  position: relative;
+}
+
+/* The pill stays 36px to look light; its hit area is a full 44px. */
+.machines::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
 }
 
 .dot {
@@ -256,8 +264,10 @@ code,
 }
 
 .banner .icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--ink);
 }
 
 .banner p {
@@ -269,7 +279,8 @@ code,
   background: none;
   font-weight: 600;
   color: var(--ink);
-  padding: 8px 4px;
+  min-height: 44px;
+  padding: 0 6px;
   cursor: pointer;
 }
 
@@ -338,12 +349,22 @@ code,
   display: none;
 }
 
+/* Nothing waiting: one quiet line instead of the rail, and the list moves up. */
 .rail-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 var(--gutter);
-  padding: 14px 0 4px;
+  padding: 2px 0 0;
   color: var(--ink-2);
-  border-top: 3px solid var(--rail);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rail-empty .icon {
+  width: 20px;
+  height: 20px;
+  color: var(--ok-ink);
 }
 
 .rail-dots {
@@ -473,9 +494,14 @@ code,
   font-size: 13.5px;
   line-height: 1.5;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   max-height: 9.5em;
   overflow: auto;
+}
+
+/* Literal tokens wrap only between each other (see Literal in ticket.tsx). */
+.proof .tok {
+  white-space: nowrap;
 }
 
 .proof-label {
@@ -629,11 +655,12 @@ code,
   border-color: var(--rule);
 }
 
+/* Still reads as a button on the light ground and on paper: a muted outline, never no outline. */
 .btn:disabled {
   cursor: not-allowed;
   transform: none;
   background: none;
-  border-color: var(--rule-paper);
+  border-color: color-mix(in srgb, var(--ink-3) 50%, transparent);
   color: var(--ink-3);
 }
 
@@ -920,7 +947,7 @@ code,
 }
 
 .composer .quick button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 6px;
   border: 1.5px solid var(--rule);
@@ -1007,7 +1034,7 @@ code,
 }
 
 .segmented button {
-  min-height: 40px;
+  min-height: 44px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -1140,10 +1167,46 @@ code,
   margin-bottom: 6px;
 }
 
-.empty code {
-  background: var(--paper);
-  padding: 2px 6px;
+.empty code,
+.lede code,
+.fine code,
+.error-text code,
+.item .hint code {
+  background: var(--paper-2);
+  color: var(--ink);
+  padding: 1px 5px;
   border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* A machine that went quiet: its sessions are what it last reported, not what is true now. */
+.stale-note {
+  margin: 0 0 8px;
+  padding: 0 var(--gutter);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.page > .stale-note {
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.stale .state {
+  color: var(--ink-3);
+}
+
+.stale .row-title {
+  color: var(--ink-2);
+}
+
+.item.top {
+  align-items: flex-start;
+}
+
+/* Sit the status dot on the first line of text (13.5px label, ~20px line box). */
+.item.top > .dot {
+  margin-top: 6px;
 }
 
 .skeleton {
