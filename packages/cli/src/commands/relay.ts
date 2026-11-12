@@ -98,9 +98,12 @@ export async function relay(argv: string[]): Promise<number> {
   if (d.code !== 0) {
     if (/workers\.dev subdomain/i.test(d.out)) {
       // A new Cloudflare account: its workers.dev subdomain is picked once, in the dashboard.
-      console.error('\nYour Cloudflare account needs a workers.dev subdomain first (a one-time choice). Open')
-      console.error('dash.cloudflare.com → Workers & Pages, pick one, then run `agentwatch relay deploy` again.')
-      console.error('The relay will be at https://agentwatch.<subdomain>.workers.dev.')
+      console.error(
+        '\nYour Cloudflare account needs a workers.dev subdomain first (a one-time choice). In a terminal, run',
+      )
+      console.error(`  cd ${repo.relayDir} && npx wrangler deploy`)
+      console.error('and pick one when it asks (or set it in the dashboard: Workers & Pages → Subdomain). Then run')
+      console.error('`agentwatch relay deploy` again. The relay will be at https://agentwatch.<subdomain>.workers.dev.')
     } else console.error('\nwrangler deploy failed (see above).')
     return 1
   }
