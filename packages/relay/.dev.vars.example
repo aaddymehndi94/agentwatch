@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `pnpm dev:relay` (wrangler dev). .dev.vars is gitignored.
+# In production, `agentwatch relay deploy` sets CLAIM_SECRET for you with `wrangler secret put`.
+# The first `agentwatch setup --claim-secret <this>` claims the relay; after that it is ignored.
+CLAIM_SECRET=replace-with-a-long-random-string

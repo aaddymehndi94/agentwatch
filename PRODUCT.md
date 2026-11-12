@@ -69,7 +69,7 @@ Nearby products, and where they stop short:
   notification itself. iOS opens the request with one tap.
 - **The laptop.** It only connects out (one WebSocket). If the laptop goes to sleep, loses network or its desktop
   session ends, the phone still shows the last known state and gets one "offline" push.
-- **The owner's work user** runs with `summary` privacy: no message text ever leaves that
+- **The owner's work OS user** runs with `summary` privacy: no message text ever leaves that
   machine, only states like "Claude finished in <project>".
 
 ## Capabilities and Constraints

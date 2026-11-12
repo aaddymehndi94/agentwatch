@@ -1,6 +1,6 @@
 # Spike results (2026-11-12)
 
-The spikes were run against real agents in detached tmux sessions on this machine (as a user running in tmux under another user's desktop session).
+The spikes were run against real agents in detached tmux sessions on this machine (the owner's own user, in tmux under another user's desktop session).
 The throwaway code is in `spikes/` (gitignored). The fixtures were copied into `packages/cli/test/fixtures/`.
 
 ## S1 — Claude permission hold: PASS (this changes the plan: away mode is no longer needed)
@@ -56,8 +56,8 @@ codex-cli 0.166.0 TUI in tmux; the shared daemon ran with a `pid` backend (no sy
   reconnect with backoff and must re-join its threads.
 - No `thread/closed` arrived after the TUI exited while we were subscribed. For v1, "ended" is detected by TUI process
   liveness (`/proc`: a codex TUI process with that cwd), then we `thread/unsubscribe`.
-- That user's Codex daemon also reports `remoteControl/status/changed: connected` (OpenAI's own phone relay). It coexists with us.
+- The owner's Codex daemon also reports `remoteControl/status/changed: connected` (OpenAI's own phone relay). It coexists with us.
 
 ## S4 — Push: deferred into the relay ticket (unit test against a reference RFC 8291 decrypt; real phone in the morning).
 
-## S5 — logind: the tmux user can read seat0's `LockedHint`/`IdleHint`. No longer needed, since away mode was dropped.
+## S5 — logind: a user can read seat0's `LockedHint`/`IdleHint`. No longer needed, since away mode was dropped.
