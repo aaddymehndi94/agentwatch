@@ -54,7 +54,10 @@ export class Hub extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.sql = ctx.storage.sql
-    ctx.blockConcurrencyWhile(async () => migrate(this.sql))
+    ctx.blockConcurrencyWhile(async () => {
+      migrate(this.sql)
+      await this.adoptLegacyOwner()
+    })
     // Keepalive without waking the object: the daemon sends "ping" every 30 s.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG))
   }
@@ -155,6 +158,22 @@ export class Hub extends DurableObject<Env> {
     })
     for (const { id } of others) for (const ws of this.ctx.getWebSockets(id)) ws.close(4003, 'revoked')
     return json({ sourceId, sourceToken: await this.issueToken('source', sourceId) })
+  }
+
+  /**
+   * Relays claimed before owners existed: the first source to join was the one that claimed it, and the secret it
+   * claimed with is the one still set. Without this, nobody could pair, invite or rotate on such a relay.
+   */
+  private async adoptLegacyOwner(): Promise<void> {
+    if (!this.isClaimed()) return
+    if (!this.meta('owner')) {
+      const first = this.sql
+        .exec<{ id: string }>('SELECT id FROM sources ORDER BY created_at, rowid LIMIT 1')
+        .toArray()[0]
+      if (first) this.setMeta('owner', first.id)
+    }
+    if (!this.meta('claim_hash') && this.env.CLAIM_SECRET)
+      this.setMeta('claim_hash', await sha256Hex(`claim:${this.env.CLAIM_SECRET}`))
   }
 
   private meta(k: string): string | undefined {
@@ -278,7 +297,10 @@ export class Hub extends DurableObject<Env> {
     switch (msg.t) {
       case 'hello':
         this.sql.exec(
-          `UPDATE sources SET host = ?, user = ?, privacy = ?, allow_messages = ?, daemon_version = ?, adapters = ?
+          // The name a source gives in its first hello sticks, so a joined user that goes rogue later can't rename
+          // itself to look like another machine on the phone.
+          `UPDATE sources SET host = CASE WHEN host = '' THEN ? ELSE host END, user = CASE WHEN user = '' THEN ? ELSE user END,
+             privacy = ?, allow_messages = ?, daemon_version = ?, adapters = ?
            WHERE id = ?`,
           msg.host,
           msg.user,
@@ -482,7 +504,8 @@ export class Hub extends DurableObject<Env> {
       `INSERT INTO requests (id, source_id, session_id, kind, created_at, status, closed_at, answerable, sealed)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET status = excluded.status, closed_at = excluded.closed_at,
-         answerable = excluded.answerable, sealed = excluded.sealed`,
+         answerable = excluded.answerable, sealed = excluded.sealed
+       WHERE requests.source_id = excluded.source_id`,
       r.id,
       sourceId,
       r.sessionId,

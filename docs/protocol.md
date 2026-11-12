@@ -81,7 +81,7 @@ or waiting on you, every phone gets a single "offline" push.
 
 | `t` | Fields | Notes |
 | --- | --- | --- |
-| `hello` | `v, host, user, privacy, allowMessages, daemonVersion, adapters` | First, on every connect |
+| `hello` | `v, host, user, privacy, allowMessages, daemonVersion, adapters` | First, on every connect. `host` and `user` are kept from the first hello only, so a source can't rename itself later |
 | `snapshot` | `sessions[], requests[]` | Right after `hello`. Open requests it doesn't list become `expired`, and missing sessions `ended`. |
 | `session` | `session` | Upsert: clear state plus `sealed` info |
 | `event` | `event {sessionId, at, kind, sealed?}` | Timeline: `prompted`, `needs_you`, `answered`, `done`, `ended`, `replied` |

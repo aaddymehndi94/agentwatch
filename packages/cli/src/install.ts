@@ -11,6 +11,7 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { trustedBinary } from './own.ts'
 import type { Paths } from './paths.ts'
 import { VERSION } from './version.ts'
 
@@ -110,28 +111,7 @@ export function pickNode(
   return null
 }
 
-/**
- * Safe to exec on every hook: owned by root or this user, and neither it, its folder, nor the folder of the link that
- * leads to it can be changed by anyone else. (Group-writable is fine for this user's own group, as with nvm.)
- */
-export function trustedBinary(
-  file: string,
-  ids: { uid: number; gid: number } = { uid: process.getuid?.() ?? 0, gid: process.getgid?.() ?? 0 },
-): boolean {
-  if (!path.isAbsolute(file)) return false
-  try {
-    const real = fs.realpathSync(file)
-    for (const f of new Set([path.dirname(file), real, path.dirname(real)])) {
-      const st = fs.statSync(f)
-      if (st.uid !== 0 && st.uid !== ids.uid) return false
-      if (st.mode & 0o002) return false
-      if (st.mode & 0o020 && st.gid !== 0 && st.gid !== ids.gid) return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
+export { trustedBinary }
 
 const ownNodePath = (installDir: string) => path.join(installDir, 'node', 'bin', 'node')
 

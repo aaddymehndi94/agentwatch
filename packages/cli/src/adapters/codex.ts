@@ -46,7 +46,7 @@ interface Thread {
   lastMessage?: string
   turnPending: NodeJS.Timeout | null
   activeFallback: NodeJS.Timeout | null
-  fileChanges: Map<string, string[]>
+  fileChanges: Map<string, { path: string; diff: string }[]>
   goneChecks: number
   /** Server requests that arrived while we were still joining (Codex replays pending approvals right after resume). */
   early: [number | string, string, Json][]
@@ -367,7 +367,12 @@ export class CodexAdapter implements AgentAdapter {
           this.startTurn(t, text || undefined)
         }
         if (item.type === 'fileChange' && typeof item.id === 'string' && Array.isArray(item.changes)) {
-          t.fileChanges.set(item.id, (item.changes as Json[]).map((c) => String(c.path ?? '')).filter(Boolean))
+          t.fileChanges.set(
+            item.id,
+            (item.changes as Json[])
+              .map((c) => ({ path: String(c.path ?? ''), diff: typeof c.diff === 'string' ? c.diff : '' }))
+              .filter((c) => c.path),
+          )
         }
         return
       }
@@ -488,13 +493,18 @@ export class CodexAdapter implements AgentAdapter {
       case 'item/fileChange/requestApproval': {
         const files = t.fileChanges.get(String(params.itemId)) ?? []
         const reason = typeof params.reason === 'string' ? params.reason : ''
+        // The file names and the diffs: what will change, not just where.
+        const shown = literal(
+          files.map((f) => [relativeTo(f.path, t.cwd), f.diff.trimEnd()].filter(Boolean).join('\n')).join('\n\n'),
+          DETAIL_MAX,
+        )
         info = {
           title: files.length === 1 ? 'Edit a file' : 'Edit files',
           tool: 'apply_patch',
-          detail:
-            [...files.map((f) => relativeTo(f, t.cwd)), reason && `# ${reason}`].filter(Boolean).join('\n') ||
-            'Apply changes',
+          detail: [shown.text || 'Apply changes', reason && `# ${clip(reason, 300)}`].filter(Boolean).join('\n'),
         }
+        // Approve from the phone only what the phone can show in full.
+        if (shown.cut || !files.length || files.some((f) => !f.diff)) answerable = false
         reply = (b) => (b.kind === 'decide' ? { decision: b.behavior === 'allow' ? 'accept' : 'decline' } : null)
         break
       }

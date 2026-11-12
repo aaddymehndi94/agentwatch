@@ -32,13 +32,32 @@ async function socketPath($: EngineInterface): Promise<string> {
   return `${state || `${home}/.local/state`}/agentwatch/agentwatchd.sock`
 }
 
+/**
+ * The socket and its folder belong to this OS user, and nobody else can write to the folder. Whatever this daemon
+ * sends is typed in as you, so a HOME or XDG_STATE_HOME leaked from another account (tmux started from someone else's
+ * desktop, say) must never lead here to their daemon, or to one they set up to look like it.
+ */
+const OWN_CHECK =
+  'd=$(dirname "$1") && [ -O "$1" ] && [ -O "$d" ] && case $(ls -ld "$d") in ?????w*|????????w*) exit 1 ;; esac'
+
+async function ours($: EngineInterface, socket: string): Promise<boolean> {
+  try {
+    return (await $.process.run(['/bin/sh', '-c', OWN_CHECK, 'sh', socket], { timeoutMs: 5_000 })).exitCode === 0
+  } catch {
+    return false
+  }
+}
+
 async function bridge($: EngineInterface): Promise<void> {
   const socket = await socketPath($)
   const loop = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
   let backoff = MIN_BACKOFF_MS
+  let checked = false
   for (;;) {
     const session = await $.session.id()
     try {
+      checked ||= await ours($, socket)
+      if (!checked) throw new Error('no daemon of ours yet')
       const r = await $.http.fetch(`${BASE}?session=${encodeURIComponent(session)}&loop=${loop}`, {
         socketPath: socket,
       })
@@ -55,7 +74,9 @@ async function bridge($: EngineInterface): Promise<void> {
         continue
       }
     } catch {
-      // The daemon isn't running (it starts on the next hook) or AgentWatch isn't set up for this user.
+      // The daemon isn't running (it starts on the next hook) or AgentWatch isn't set up for this user. Check the
+      // socket again before trusting whatever answers there next.
+      checked = false
     }
     await $.clock.sleep(backoff)
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)

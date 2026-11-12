@@ -73,6 +73,9 @@ export function loadConfig(file = paths().configFile): Config | null {
   } catch {
     return null
   }
+  // A config from another account (reached through a leaked HOME or XDG_CONFIG_HOME) would send this user's agents to
+  // their relay, sealed with their key.
+  if (fs.statSync(file).uid !== process.getuid?.()) throw new Error(`${file} belongs to another user; not using it`)
   return Config.parse(JSON.parse(raw))
 }
 

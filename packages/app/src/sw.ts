@@ -102,7 +102,9 @@ async function describe(p: PushPayload): Promise<{ info: PushInfo; verified: boo
     body: 'Open AgentWatch to see details.',
   }
   if (!p.sealed) {
-    return { info: p.title && p.body !== undefined ? { title: p.title, body: p.body } : generic, verified: false }
+    // The relay's own pushes say a computer went offline, or answer a test. It doesn't get to speak for an agent.
+    const own = (p.kind === 'offline' || p.kind === 'test') && p.title && p.body !== undefined
+    return { info: own ? { title: p.title!, body: p.body! } : generic, verified: false }
   }
   if (!p.sourceId) return { info: generic, verified: false }
   try {

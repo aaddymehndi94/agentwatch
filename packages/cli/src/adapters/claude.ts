@@ -174,33 +174,55 @@ function stableStringify(v: unknown): string {
 }
 
 /**
- * What a tool wants to do, as the literal the human approves: the exact command, the file, the URL, or the tool's full
- * input. Never the agent's own `description` of it, which could say anything. `cut` means it didn't fit.
+ * What a tool wants to do, as the literal the human approves: the exact command, the file and the change to it, the
+ * URL, or the tool's full input. Never the agent's own `description` of it, which could say anything. `cut` means it
+ * didn't fit, so it can only be answered at the computer.
  */
 export function describeTool(tool: string, input: Record<string, unknown>): { detail: string; cut: boolean } {
   const s = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined)
-  const whole = (detail: string) => ({ detail, cut: false })
+  const path = s('file_path') ?? s('notebook_path') ?? tool
+  let raw: string
   switch (tool) {
-    case 'Bash': {
-      const r = literal(s('command') ?? '', DETAIL_MAX)
-      return { detail: r.text, cut: r.cut }
-    }
-    case 'Edit':
-    case 'MultiEdit':
-    case 'Write':
+    case 'Bash':
+      raw = s('command') ?? ''
+      break
     case 'Read':
-    case 'NotebookEdit':
-      return whole(s('file_path') ?? s('notebook_path') ?? tool)
-    case 'WebFetch':
-      return whole(s('url') ?? tool)
-    case 'WebSearch':
-      return whole(s('query') ?? tool)
-    default: {
-      if (!Object.keys(input).length) return whole(tool)
-      const r = literal(JSON.stringify(input, null, 2), DETAIL_MAX)
-      return { detail: r.text, cut: r.cut }
+      raw = path
+      break
+    case 'Write':
+      raw = `${path}\n${diffLines('', s('content') ?? '')}`
+      break
+    case 'Edit':
+      raw = `${path}${input.replace_all === true ? ' (every match)' : ''}\n${diffLines(s('old_string') ?? '', s('new_string') ?? '')}`
+      break
+    case 'MultiEdit': {
+      const edits = Array.isArray(input.edits) ? input.edits.filter(isRecord) : []
+      const str = (e: Record<string, unknown>, k: string) => (typeof e[k] === 'string' ? (e[k] as string) : '')
+      raw = [path, ...edits.map((e) => diffLines(str(e, 'old_string'), str(e, 'new_string')))].join('\n')
+      break
     }
+    case 'NotebookEdit': {
+      const where = [s('cell_id') && `cell ${s('cell_id')}`, s('edit_mode')].filter(Boolean).join(', ')
+      raw = `${path}${where ? ` (${where})` : ''}\n${diffLines('', s('new_source') ?? '')}`
+      break
+    }
+    case 'WebFetch':
+      raw = s('url') ?? tool
+      break
+    case 'WebSearch':
+      raw = s('query') ?? tool
+      break
+    default:
+      raw = Object.keys(input).length ? JSON.stringify(input, null, 2) : tool
   }
+  const r = literal(raw, DETAIL_MAX)
+  return { detail: r.text, cut: r.cut }
+}
+
+/** Old lines as `- `, new ones as `+ `: the whole change, not just the file it lands in. */
+function diffLines(before: string, after: string): string {
+  const lines = (t: string, mark: string) => (t ? t.split('\n').map((l) => `${mark} ${l}`) : [])
+  return [...lines(before, '-'), ...lines(after, '+')].join('\n')
 }
 
 function parseQuestions(raw: unknown): Question[] | undefined {

@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { install, MARKETPLACE, ownNodeCopy, PLUGIN_ID, pickNode, trustedBinary, uninstall } from '../src/install.ts'
+import { privateGroup } from '../src/own.ts'
 import { paths } from '../src/paths.ts'
 import { VERSION } from '../src/version.ts'
 import { CLI_DIR } from './harness.ts'
@@ -227,6 +228,17 @@ describe('trustedBinary', () => {
     fs.chmodSync(shared, 0o777)
     fs.symlinkSync(file(), path.join(shared, 'node'))
     expect(trustedBinary(path.join(shared, 'node'), me)).toBe(false)
+  })
+
+  it('accepts a sticky shared folder on the way, and group write only for a group of one', () => {
+    const tmp = path.join(home, 'tmp')
+    fs.mkdirSync(path.join(tmp, 'mine'), { recursive: true })
+    fs.chmodSync(tmp, 0o1777)
+    fs.writeFileSync(path.join(tmp, 'mine', 'node'), '#!/bin/sh\n', { mode: 0o755 })
+    expect(trustedBinary(path.join(tmp, 'mine', 'node'), me)).toBe(true)
+    fs.chmodSync(path.join(tmp, 'mine'), 0o775)
+    expect(trustedBinary(path.join(tmp, 'mine', 'node'), me)).toBe(privateGroup(me.gid, me))
+    expect(trustedBinary(path.join(tmp, 'mine', 'node'), { uid: me.uid, gid: me.gid + 1 })).toBe(false)
   })
 
   it('gives a user without a safe Node a private copy', () => {

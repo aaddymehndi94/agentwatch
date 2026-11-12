@@ -136,9 +136,18 @@ export const DETAIL_MAX = 8000
  * Literal text (a command, a tool's input) exactly as it will run, line breaks and all, so a second line can't hide
  * behind the first. Past `max` characters it is cut, and says so on a line of its own.
  */
-export function literal(text: string, max: number): { text: string; cut: boolean } {
+export function literal(raw: string, max: number): { text: string; cut: boolean } {
+  const text = visible(raw)
   if (text.length <= max) return { text, cut: false }
   return { text: `${text.slice(0, max)}\n… ${text.length - max} more characters not shown`, cut: true }
+}
+
+/** Invisible and direction-changing characters, which can make text read differently from what it does. */
+const HIDDEN = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g
+
+/** Spell out invisible and bidi control characters as ⟨U+XXXX⟩, so a command reads in the order it runs. */
+export function visible(text: string): string {
+  return text.replace(HIDDEN, (c) => `⟨U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}⟩`)
 }
 
 export function clip(text: string, max: number): string {

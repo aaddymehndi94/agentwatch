@@ -216,6 +216,31 @@ describe('Codex adapter', () => {
     expect(session()!.info.snippet).toBe('Created `hello.txt` containing `hi`.')
   })
 
+  it('a file change shows its diff; one it cannot show is answered at the computer', async () => {
+    await waitFor('approval', openRequest)
+    const change = (id: string, diff?: string) => {
+      fake.notify('item/started', {
+        threadId: THREAD,
+        item: { type: 'fileChange', id, changes: [{ path: '/elsewhere/a.txt', kind: { type: 'update' }, diff }] },
+      })
+    }
+    const edit = (rpc: number, itemId: string) =>
+      fake.send({ id: rpc, method: 'item/fileChange/requestApproval', params: { threadId: THREAD, itemId } })
+    change('fc1', '@@ -1 +1 @@\n-old\n+new\n')
+    edit(1, 'fc1')
+    const shown = await waitFor('file change', () =>
+      [...core.requests.values()].find((r) => r.info.tool === 'apply_patch' && r.status === 'open'),
+    )
+    expect(shown.info.detail).toBe('/elsewhere/a.txt\n@@ -1 +1 @@\n-old\n+new')
+    expect(shown.answerable).toBe(true)
+    change('fc2')
+    edit(2, 'fc2')
+    const blind = await waitFor('blind file change', () =>
+      [...core.requests.values()].find((r) => r.info.tool === 'apply_patch' && r.id !== shown.id),
+    )
+    expect(blind.answerable).toBe(false)
+  })
+
   it('deny on the phone → decline', async () => {
     const req = await waitFor('approval', openRequest)
     await command({ kind: 'decide', behavior: 'deny' }, req.id)
