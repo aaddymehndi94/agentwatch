@@ -246,7 +246,7 @@ never decorates.
 
 There are three layers. The ground carries the sky. Surfaces (lists, cards, the composer) sit on soft two-part
 shadows (`--shadow`: a 1px contact plus a long, low-opacity drop). Chrome (the bar) is clear over the sky at the top and
-frosts (12px blur, 78% ground) as content scrolls under it, using a scroll-driven animation. Scroll position is not
+frosts (12px blur, 88% ground) as content scrolls under it, using a scroll-driven animation. Scroll position is not
 motion, so this stays on under reduced motion. On wide screens the bar spans the window while its contents stay on
 the 600px column. A request card adds a heat-tinted glow under itself.
 That glow is the only coloured shadow, and it means "waiting".

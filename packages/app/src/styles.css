@@ -237,7 +237,7 @@ pre,
     backdrop-filter: blur(0) saturate(1);
   }
   to {
-    background-color: color-mix(in oklab, var(--bg) 78%, transparent);
+    background-color: color-mix(in oklab, var(--bg) 88%, transparent);
     border-bottom-color: var(--line);
     -webkit-backdrop-filter: blur(12px) saturate(1.5);
     backdrop-filter: blur(12px) saturate(1.5);
