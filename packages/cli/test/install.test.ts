@@ -5,11 +5,11 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { install, MARKETPLACE, PLUGIN_ID, pickNode, uninstall } from '../src/install.ts'
 import { paths } from '../src/paths.ts'
 import { VERSION } from '../src/version.ts'
-import { buildCli, CLI_DIR } from './harness.ts'
+import { CLI_DIR } from './harness.ts'
 
 const FAKE_CLAUDE = `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path')
@@ -57,8 +57,6 @@ const ctx = () => ({ paths: paths(env), home, env, bundleDir: BUNDLE, node: proc
 const calls = () => fs.readFileSync(path.join(fakeBin, 'calls.log'), 'utf8').trim().split('\n')
 const settingsFile = () => path.join(home, '.claude', 'settings.json')
 const ORIGINAL = { theme: 'dark', enabledPlugins: { 'other@market': true }, permissions: { allow: ['Bash(ls)'] } }
-
-beforeAll(() => buildCli(), 120_000)
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-install-'))

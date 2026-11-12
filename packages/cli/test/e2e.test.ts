@@ -16,7 +16,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { call } from '../src/client.ts'
 import {
   BIN,
-  buildCli,
   FakeDevice,
   hook,
   loadClaudeFixture,
@@ -42,7 +41,6 @@ let sourceId: string
 const session = (s: StateView) => s.sessions.find((x) => x.id === SID)
 
 beforeAll(async () => {
-  buildCli()
   relay = await startRelay()
   home = tempHome()
 }, 120_000)
