@@ -399,6 +399,82 @@ describe('notifications reach the phone, end-to-end encrypted', () => {
   }, 40_000)
 })
 
+describe('your own scripts: ask and emit', () => {
+  const openGeneric = async () =>
+    waitFor('open generic request', async () => {
+      const s = await phone.state()
+      const r = s.requests.find((x) => x.status === 'open' && x.sessionId.startsWith('g:'))
+      return r ? { r, s } : undefined
+    })
+
+  it('`ask` waits for the phone and prints the chosen label', async () => {
+    const asked = run(BIN, ['ask', 'Which environment?', '--choices', 'staging,production', '--timeout', '1m'], home)
+    const { r, s } = await openGeneric()
+    expect(s.sessions.find((x) => x.id === r.sessionId)).toMatchObject({ agent: 'generic', state: 'needs_you' })
+    const info = await phone.open<RequestInfo>(r.sealed, bind.request(sourceId, r.sessionId, r.id))
+    expect(info.questions?.[0]?.options.map((o) => o.label)).toEqual(['staging', 'production'])
+    await phone.command({
+      sourceId,
+      sessionId: r.sessionId,
+      requestId: r.id,
+      body: { kind: 'answer', answers: { 'Which environment?': 'production' } },
+    })
+    const out = await asked
+    expect(out.stdout).toBe('production\n')
+    expect(out.code).toBe(0)
+    await waitFor('one-off session ended', async () =>
+      (await phone.state()).sessions.find((x) => x.id === r.sessionId && x.state === 'ended'),
+    )
+  }, 30_000)
+
+  it('`ask --approve` exits 1 on Deny, and 2 when nobody answers in time', async () => {
+    const asked = run(BIN, ['ask', '--approve', 'Drop the staging database?'], home)
+    const { r } = await openGeneric()
+    expect(r.kind).toBe('permission')
+    await phone.command({
+      sourceId,
+      sessionId: r.sessionId,
+      requestId: r.id,
+      body: { kind: 'decide', behavior: 'deny' },
+    })
+    const out = await asked
+    expect(out.stdout).toBe('denied\n')
+    expect(out.code).toBe(1)
+
+    const late = await run(BIN, ['ask', 'Anyone there?', '--timeout', '2s'], home)
+    expect(late.code).toBe(2)
+    expect(late.stderr).toContain('No answer in time')
+  }, 30_000)
+
+  it('`emit` shows a session of your own in the app', async () => {
+    const r = await run(
+      BIN,
+      ['emit', '--session', 'nightly-etl', '--state', 'working', '--message', 'Step 2 of 4'],
+      home,
+    )
+    expect(r.code).toBe(0)
+    const s = await waitFor('emitted session', async () =>
+      (await phone.state()).sessions.find((x) => x.id === 'g:nightly-etl'),
+    )
+    expect(s).toMatchObject({ agent: 'generic', state: 'working', caps: { reply: false } })
+    expect(await phone.open<SessionInfo>(s.sealed!, bind.session(sourceId, s.id))).toMatchObject({
+      snippet: 'Step 2 of 4',
+    })
+    expect((await run(BIN, ['emit', '--session', 'nightly-etl', '--state', 'nope'], home)).code).toBe(64)
+  }, 30_000)
+
+  it('without a setup, `ask` exits 3 straight away', async () => {
+    const empty = tempHome()
+    try {
+      const r = await run(BIN, ['ask', 'Hello?'], empty)
+      expect(r.code).toBe(3)
+      expect(r.stderr).toMatch(/not set up/)
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true })
+    }
+  }, 30_000)
+})
+
 describe('rotate: a new key after a lost phone', () => {
   it("signs out every phone and other computer, and re-sends this user's sessions under the new key", async () => {
     const cfgFile = path.join(home, 'config.json')

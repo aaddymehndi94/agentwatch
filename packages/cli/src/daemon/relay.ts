@@ -1,6 +1,6 @@
 // The daemon's single outbound connection to the relay: a WebSocket to the Hub with reconnect + backoff.
 // On every (re)connect it sends hello + a full snapshot, so the relay converges no matter what was missed.
-// Pushes made while offline are queued briefly; everything else is state and gets re-sent by the snapshot.
+// Pushes and timeline events made while offline are queued briefly; everything else is state, re-sent by the snapshot.
 
 import { PING, RelayMessage, randomId, type SourceMessage } from '@agentwatch/protocol'
 import WebSocket from 'ws'
@@ -8,8 +8,8 @@ import type { Logger } from '../log.ts'
 
 const PING_EVERY_MS = 30_000
 const MAX_BACKOFF_MS = 60_000
-const PUSH_QUEUE_MAX = 20
-const PUSH_QUEUE_TTL_MS = 10 * 60_000
+const QUEUE_MAX = { push: 20, event: 200 }
+const QUEUE_TTL_MS = 10 * 60_000
 
 type WithoutRid<T> = T extends unknown ? Omit<T, 'rid'> : never
 /** Messages the Hub acknowledges; `request` adds the `rid`. */
@@ -37,7 +37,8 @@ export class RelayLink {
   private stopped = false
   private pingTimer: NodeJS.Timeout | null = null
   private retryTimer: NodeJS.Timeout | null = null
-  private queuedPushes: { at: number; msg: SourceMessage }[] = []
+  /** Pushes and timeline events made while offline: the snapshot doesn't carry them. */
+  private queued: { at: number; msg: SourceMessage }[] = []
   private pendingAcks = new Map<string, { resolve: (r: AckResult) => void; timer: NodeJS.Timeout }>()
   lastConnectedAt = 0
   lastError = ''
@@ -93,8 +94,8 @@ export class RelayLink {
       this.o.onStatus?.(true)
       this.rawSend(this.o.hello())
       this.rawSend(await this.o.snapshot())
-      const cutoff = Date.now() - PUSH_QUEUE_TTL_MS
-      for (const q of this.queuedPushes.splice(0)) if (q.at > cutoff) this.rawSend(q.msg)
+      const cutoff = Date.now() - QUEUE_TTL_MS
+      for (const q of this.queued.splice(0)) if (q.at > cutoff) this.rawSend(q.msg)
       this.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(PING)
       }, PING_EVERY_MS)
@@ -157,12 +158,15 @@ export class RelayLink {
     return true
   }
 
-  /** Send state. If offline it's dropped: the next snapshot carries it. Pushes are queued briefly instead. */
+  /** Send state. If offline it's dropped: the next snapshot carries it. Pushes and events are queued briefly instead
+   * (a hook that starts the daemon reports its first event before the relay link is up). */
   send(msg: SourceMessage): void {
     if (this.rawSend(msg)) return
-    if (msg.t === 'push') {
-      this.queuedPushes.push({ at: Date.now(), msg })
-      if (this.queuedPushes.length > PUSH_QUEUE_MAX) this.queuedPushes.shift()
+    if (msg.t === 'push' || msg.t === 'event') {
+      this.queued.push({ at: Date.now(), msg })
+      const kind = msg.t
+      const same = this.queued.filter((q) => q.msg.t === kind)
+      if (same.length > QUEUE_MAX[kind]) this.queued.splice(this.queued.indexOf(same[0]!), 1)
     }
   }
 

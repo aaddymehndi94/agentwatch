@@ -26,6 +26,13 @@ Options for setup, join and relay deploy
   --no-claude               don't install the Claude Code plugin
   --node <path>             Node (22+) for the hook launchers; picked automatically otherwise
 
+Your own scripts and agents
+  ask "<question>" [--choices a,b] [--multi] [--timeout 10m]
+                                                Ask on the phone; prints the answer (exit 2: no answer in time)
+  ask --approve "<question>" [--detail …]       Approve / Deny on the phone (exit 0 approved, 1 denied)
+  emit --session <name> --state working|idle|ended [--message …] [--pid <pid>]
+                                                Show a session of your own in the app
+
 Daemon
   daemon [--foreground]                         Run the daemon (normally started on demand by hooks)
   stop                                          Stop this user's daemon
@@ -80,6 +87,10 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./commands/mute.ts')).mute(['off'])
     case 'rotate':
       return (await import('./commands/rotate.ts')).rotate(rest)
+    case 'ask':
+      return (await import('./commands/ask.ts')).ask(rest)
+    case 'emit':
+      return (await import('./commands/ask.ts')).emit(rest)
     default:
       console.error(`Unknown command: ${cmd}\n\n${HELP}`)
       return 64

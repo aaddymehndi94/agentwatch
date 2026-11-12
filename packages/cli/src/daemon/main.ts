@@ -18,6 +18,7 @@ import {
 import { z } from 'zod'
 import { ClaudeAdapter } from '../adapters/claude.ts'
 import { CodexAdapter } from '../adapters/codex.ts'
+import { AskArgs, AskRefused, EmitArgs, GenericAdapter } from '../adapters/generic.ts'
 import { type Config, loadConfig, saveConfig } from '../config.ts'
 import { fileLogger, type Logger } from '../log.ts'
 import { type Paths, paths } from '../paths.ts'
@@ -182,6 +183,8 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
     onDescribe: () => relay?.resendHello(),
   })
   if (cfg.codex.enabled) core.register(codex)
+  const generic = new GenericAdapter(core, { log })
+  core.register(generic)
 
   relay = new RelayLink({
     relayUrl: cfg.relayUrl,
@@ -299,6 +302,21 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
         .object({ session: z.string(), id: z.string(), ok: z.boolean(), error: z.string().max(500).optional() })
         .parse(body ?? {})
       return { status: claude.bridge.ack(a.session, a.id, a.ok, a.error) ? 200 : 404, body: {} }
+    }
+    if (method === 'POST' && path === '/v1/emit') {
+      const a = EmitArgs.safeParse(body ?? {})
+      if (!a.success) return { status: 400, body: { error: a.error.issues.map((i) => i.message).join('; ') } }
+      return { status: 200, body: generic.emit(a.data) }
+    }
+    if (method === 'POST' && path === '/v1/ask') {
+      const a = AskArgs.safeParse(body ?? {})
+      if (!a.success) return { status: 400, body: { error: a.error.issues.map((i) => i.message).join('; ') } }
+      try {
+        return { status: 200, body: await generic.ask(a.data, signal) }
+      } catch (e) {
+        if (e instanceof AskRefused) return { status: 403, body: { error: e.message } }
+        throw e
+      }
     }
     if (method === 'POST' && path === '/v1/test-push') {
       if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay' } }

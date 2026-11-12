@@ -634,7 +634,7 @@ export class Hub extends DurableObject<Env> {
   private events(sourceId: string, sessionId: string) {
     return this.sql
       .exec<{ at: number; kind: string; sealed: string | null }>(
-        'SELECT at, kind, sealed FROM events WHERE source_id = ? AND session_id = ? ORDER BY at DESC LIMIT 50',
+        'SELECT at, kind, sealed FROM events WHERE source_id = ? AND session_id = ? ORDER BY at DESC, id DESC LIMIT 50',
         sourceId,
         sessionId,
       )
