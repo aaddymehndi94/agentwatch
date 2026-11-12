@@ -163,7 +163,10 @@ export const SourceMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('event'), event: EventWire }),
   z.object({ t: z.literal('request.open'), request: RequestWire }),
   z.object({ t: z.literal('request.close'), requestId: id, status: RequestStatus, at: ts }),
-  z.object({ t: z.literal('push'), push: PushWire }),
+  /** With `rid`, the Hub acks once delivery was attempted (ok = at least one device got it). */
+  z.object({ t: z.literal('push'), push: PushWire, rid: id.optional() }),
+  /** Owner-wide mute, settable from any source (`agentwatch mute`). */
+  z.object({ t: z.literal('mute'), until: ts.nullable() }),
   z.object({
     t: z.literal('command.ack'),
     commandId: id,

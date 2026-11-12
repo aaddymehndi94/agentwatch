@@ -439,6 +439,22 @@ export class Core {
     })
   }
 
+  /** A test notification to every paired phone, sealed like any other push. */
+  async testPush(where: string): Promise<Extract<SourceMessage, { t: 'push' }>> {
+    const tag = 'test'
+    const info = { title: 'AgentWatch test', body: `Notifications work. Sent from ${where}.` }
+    return {
+      t: 'push',
+      push: {
+        tag,
+        kind: 'test',
+        urgency: 'normal',
+        actions: false,
+        sealed: await seal(this.o.key, info, bind.push(this.o.sourceId, tag)),
+      },
+    }
+  }
+
   /** Sessions worth remembering across a daemon restart. */
   exportSessions(): Session[] {
     const now = this.now()

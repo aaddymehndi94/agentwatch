@@ -10,6 +10,10 @@ Getting started
   setup --relay <url> --claim-secret <secret>   Connect this OS user to your relay (first machine)
   pair                                          Pair a phone (shows a QR code and link)
   status                                        What the daemon sees right now
+  doctor [--test-push]                          Check every link from this user to your phone
+
+Everyday
+  mute [30m|1h|8h|until 08:00|off]              Pause notifications to every phone (default 1h)
 
 Daemon
   daemon [--foreground]                         Run the daemon (normally started on demand by hooks)
@@ -48,6 +52,12 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./commands/status.ts')).status(rest)
     case 'stop':
       return (await import('./commands/status.ts')).stop()
+    case 'doctor':
+      return (await import('./commands/doctor.ts')).doctor(rest)
+    case 'mute':
+      return (await import('./commands/mute.ts')).mute(rest)
+    case 'unmute':
+      return (await import('./commands/mute.ts')).mute(['off'])
     default:
       console.error(`Unknown command: ${cmd}\n\n${HELP}`)
       return 64

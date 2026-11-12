@@ -263,7 +263,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
       if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay yet' } }
       const secret = newPairingSecret()
       const expiresAt = Date.now() + PAIRING_TTL_MS
-      const ok = await relay.request({
+      const ack = await relay.request({
         t: 'pair.create',
         pairId: secret.pairId,
         kind: args.kind,
@@ -271,10 +271,22 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
         expiresAt,
         ...(args.meta ? { meta: args.meta } : {}),
       })
-      if (!ok) return { status: 502, body: { error: 'the relay did not accept the pairing' } }
+      if (!ack.ok) return { status: 502, body: { error: ack.error ?? 'the relay did not accept the pairing' } }
       const code = formatPairingCode(secret)
       const link = `${cfg.relayUrl.replace(/\/+$/, '')}/#/pair/${code}`
       return { status: 200, body: { code, link, expiresAt } }
+    }
+    if (method === 'POST' && path === '/v1/test-push') {
+      if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay' } }
+      const ack = await relay.request(await core.testPush(`${os.userInfo().username}@${os.hostname()}`))
+      return { status: ack.ok ? 200 : 502, body: ack }
+    }
+    if (method === 'POST' && path === '/v1/mute') {
+      const { until } = z.object({ until: z.number().int().nonnegative().nullable() }).parse(body ?? {})
+      if (!relay.connected) return { status: 503, body: { error: relay.lastError || 'not connected to the relay' } }
+      relay.send({ t: 'mute', until })
+      mute = until && until > Date.now() ? until : null
+      return { status: 200, body: { mute } }
     }
     if (method === 'POST' && path === '/v1/shutdown') {
       setTimeout(() => void stop().then(() => opts.exitOnShutdown && process.exit(0)), 10)

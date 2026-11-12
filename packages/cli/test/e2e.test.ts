@@ -3,8 +3,16 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { bind, type EventInfo, type RequestInfo, type SessionInfo, type StateView } from '@agentwatch/protocol'
+import {
+  bind,
+  type EventInfo,
+  parsePairingCode,
+  type RequestInfo,
+  type SessionInfo,
+  type StateView,
+} from '@agentwatch/protocol'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { call } from '../src/client.ts'
 import {
   BIN,
   buildCli,
@@ -205,5 +213,49 @@ describe('walking skeleton', () => {
     expect(r.ms).toBeLessThan(1200)
     await waitFor('daemon back', async () => fs.existsSync(socketOf(home)))
     await waitFor('reconnected', async () => (await phone.state()).sources.find((x) => x.id === sourceId)?.online)
+  }, 30_000)
+})
+
+describe('pairing, phones and notifications', () => {
+  it('a pairing code works exactly once', async () => {
+    const r = await call<{ code: string }>('POST', '/v1/pair', { kind: 'device' }, { socket: socketOf(home) })
+    expect(r.status).toBe(200)
+    const { pairId } = parsePairingCode(r.body.code)
+    const claim = () =>
+      fetch(`${relay.url}/api/pair/claim`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pairId, name: 'Once' }),
+      })
+    expect((await claim()).status).toBe(200)
+    expect((await claim()).status).toBe(410)
+  }, 30_000)
+
+  it('a phone removed from Settings loses access at once', async () => {
+    const other = await FakeDevice.pair(relay.url, home)
+    expect((await other.fetch('GET', '/api/state')).status).toBe(200)
+    expect((await phone.fetch('DELETE', `/api/devices/${other.deviceId}`)).status).toBe(200)
+    expect((await other.fetch('GET', '/api/state')).status).toBe(401)
+    expect((await phone.fetch('GET', '/api/state')).status).toBe(200)
+  }, 30_000)
+
+  it('`agentwatch mute` mutes every phone until the given time, and `mute off` clears it', async () => {
+    const before = Date.now()
+    const r = await run(BIN, ['mute', '2h'], home)
+    expect(r.code).toBe(0)
+    expect(r.stdout).toContain('muted until')
+    const muted = await waitFor('mute', async () => (await phone.state()).mute ?? undefined)
+    expect(muted).toBeGreaterThanOrEqual(before + 2 * 3600_000 - 5000)
+    expect(muted).toBeLessThanOrEqual(Date.now() + 2 * 3600_000 + 5000)
+    expect((await run(BIN, ['mute', 'off'], home)).code).toBe(0)
+    await waitFor('unmuted', async () => (await phone.state()).mute === null)
+  }, 30_000)
+
+  it('`agentwatch doctor --test-push` checks the chain and explains a phone without notifications', async () => {
+    const r = await run(BIN, ['doctor', '--test-push'], home)
+    expect(r.stdout).toContain('✓ Daemon running')
+    expect(r.stdout).toContain('✓ Relay connected')
+    expect(r.stdout).toContain('No paired phone has notifications on')
+    expect(r.code).toBe(1)
   }, 30_000)
 })

@@ -167,6 +167,15 @@ export class FakeDevice {
     return { status: res.status, body: (await res.json()) as T }
   }
 
+  async fetch(method: string, p: string, body?: unknown): Promise<{ status: number; body: unknown }> {
+    const res = await fetch(`${this.relayUrl}${p}`, {
+      method,
+      headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    return { status: res.status, body: await res.json().catch(() => null) }
+  }
+
   async state(): Promise<StateView> {
     const r = await this.get<StateView>('/api/state')
     if (r.status !== 200) throw new Error(`state: ${r.status}`)

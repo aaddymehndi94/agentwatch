@@ -11,6 +11,15 @@ const MAX_BACKOFF_MS = 60_000
 const PUSH_QUEUE_MAX = 20
 const PUSH_QUEUE_TTL_MS = 10 * 60_000
 
+type WithoutRid<T> = T extends unknown ? Omit<T, 'rid'> : never
+/** Messages the Hub acknowledges; `request` adds the `rid`. */
+export type AckedMessage = WithoutRid<Extract<SourceMessage, { t: 'pair.create' | 'push' }>>
+
+export interface AckResult {
+  ok: boolean
+  error?: string
+}
+
 export interface RelayLinkOptions {
   relayUrl: string
   sourceToken: string
@@ -29,7 +38,7 @@ export class RelayLink {
   private pingTimer: NodeJS.Timeout | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private queuedPushes: { at: number; msg: SourceMessage }[] = []
-  private pendingAcks = new Map<string, { resolve: (ok: boolean) => void; timer: NodeJS.Timeout }>()
+  private pendingAcks = new Map<string, { resolve: (r: AckResult) => void; timer: NodeJS.Timeout }>()
   lastConnectedAt = 0
   lastError = ''
 
@@ -99,7 +108,7 @@ export class RelayLink {
         if (p) {
           clearTimeout(p.timer)
           this.pendingAcks.delete(msg.rid)
-          p.resolve(msg.ok)
+          p.resolve({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) })
         }
         return
       }
@@ -144,18 +153,16 @@ export class RelayLink {
     }
   }
 
-  /** Send a message that the Hub acknowledges (pair.create). */
-  request(
-    msg: Extract<SourceMessage, { rid: string }> | Omit<Extract<SourceMessage, { rid: string }>, 'rid'>,
-  ): Promise<boolean> {
-    const rid = 'rid' in msg ? msg.rid : randomId(8)
+  /** Send a message the Hub acknowledges (pair.create, push with rid) and wait for the ack. */
+  request(msg: AckedMessage, timeoutMs = 15_000): Promise<AckResult> {
+    const rid = randomId(8)
     const full = { ...msg, rid } as SourceMessage
     return new Promise((resolve) => {
-      if (!this.rawSend(full)) return resolve(false)
+      if (!this.rawSend(full)) return resolve({ ok: false, error: 'not connected to the relay' })
       const timer = setTimeout(() => {
         this.pendingAcks.delete(rid)
-        resolve(false)
-      }, 10_000)
+        resolve({ ok: false, error: 'the relay did not answer' })
+      }, timeoutMs)
       this.pendingAcks.set(rid, { resolve, timer })
     })
   }

@@ -293,10 +293,12 @@ export class Hub extends DurableObject<Env> {
           sourceId,
         )
         break
-      case 'push':
-        if (this.mute() === null) {
-          this.ctx.waitUntil(
-            deliverPush(
+      case 'push': {
+        // A test push is something you asked for just now, so it goes through even while muted.
+        const muted = msg.push.kind !== 'test' && this.mute() !== null
+        const delivery = muted
+          ? Promise.resolve(null)
+          : deliverPush(
               this.sql,
               this.env,
               {
@@ -310,9 +312,28 @@ export class Hub extends DurableObject<Env> {
                 sealed: msg.push.sealed,
               },
               msg.push.urgency,
+            )
+        if (msg.rid) {
+          const rid = msg.rid
+          this.ctx.waitUntil(
+            delivery.then((r) =>
+              this.send(ws, {
+                t: 'ack',
+                rid,
+                ok: !!r && r.sent > 0,
+                ...(muted
+                  ? { error: 'notifications are muted' }
+                  : !r || r.sent === 0
+                    ? { error: r?.failed ? 'the push service refused it' : 'no phone has notifications on' }
+                    : {}),
+              }),
             ),
           )
-        }
+        } else this.ctx.waitUntil(delivery)
+        break
+      }
+      case 'mute':
+        this.applyMute(msg.until)
         break
       case 'command.ack':
         this.sql.exec(
@@ -619,12 +640,16 @@ export class Hub extends DurableObject<Env> {
 
   private async setMute(request: Request): Promise<Response> {
     const { until } = z.object({ until: z.number().int().nonnegative().nullable() }).parse(await request.json())
+    return json({ mute: this.applyMute(until) })
+  }
+
+  private applyMute(until: number | null): number | null {
     if (until && until > Date.now())
       this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('mute_until', ?)`, String(until))
     else this.sql.exec(`DELETE FROM meta WHERE k = 'mute_until'`)
     const mute = this.mute()
     for (const ws of this.ctx.getWebSockets()) this.send(ws, { t: 'settings', mute })
-    return json({ mute })
+    return mute
   }
 }
 

@@ -85,7 +85,7 @@ export async function deliverPush(
 /** VAPID `sub` must be an https URL or mailto:. Default to the relay's own origin, remembered from requests. */
 function originSubject(sql: SqlStorage): string {
   const row = sql.exec<{ v: string }>(`SELECT v FROM meta WHERE k = 'origin'`).toArray()[0]
-  return row?.v ?? 'https://github.com/agentwatch/agentwatch'
+  return row?.v ?? 'https://example.com'
 }
 
 export function rememberOrigin(sql: SqlStorage, url: URL): void {
