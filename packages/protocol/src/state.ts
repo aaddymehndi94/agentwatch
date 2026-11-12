@@ -128,7 +128,6 @@ export function projectFromCwd(cwd: string | undefined): string | undefined {
   return parts[parts.length - 1] || cwd
 }
 
-/** Cut text to `max` characters on a word boundary, with an ellipsis. */
 /** The longest command or tool input shown on the phone. Anything longer is answered at the computer. */
 export const DETAIL_MAX = 8000
 
@@ -150,10 +149,34 @@ export function visible(text: string): string {
   return text.replace(HIDDEN, (c) => `⟨U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}⟩`)
 }
 
+/** One line: whitespace collapsed, cut to `max` characters on a word boundary, with an ellipsis. For titles and
+ * notification bodies. */
 export function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, ' ').trim()
   if (t.length <= max) return t
   const cut = t.slice(0, max - 1)
   const sp = cut.lastIndexOf(' ')
   return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`
+}
+
+/** The longest message (an agent's reply, your prompt) sent to the phone. */
+export const MESSAGE_MAX = 6000
+
+/**
+ * A message as written: line breaks, indentation and blank lines kept, so Markdown (lists, code blocks, tables)
+ * survives to the phone. Trailing spaces go, and runs of blank lines shrink to one. Past `max` it is cut on a line or
+ * word boundary, with an ellipsis.
+ */
+export function clipText(text: string, max: number): string {
+  const t = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (t.length <= max) return t
+  const cut = t.slice(0, max - 1)
+  const nl = cut.lastIndexOf('\n')
+  const sp = cut.lastIndexOf(' ')
+  const at = nl > max * 0.8 ? nl : sp > max * 0.6 ? sp : cut.length
+  return `${cut.slice(0, at).trimEnd()}…`
 }

@@ -11,8 +11,10 @@ import {
   type CommandEnvelope,
   type CommandStatus,
   clip,
+  clipText,
   decide,
   type EventKind,
+  MESSAGE_MAX,
   newSession,
   type Privacy,
   type RequestInfo,
@@ -340,7 +342,7 @@ export class Core {
           ? {
               sealed: await seal(
                 this.o.key,
-                { text: clip(clear, 2000) },
+                { text: clipText(clear, MESSAGE_MAX) },
                 bind.event(this.o.sourceId, { sessionId, at, kind }),
               ),
             }
@@ -394,7 +396,7 @@ export class Core {
       title: info.title ? clip(info.title, 300) : undefined,
       project: info.project,
       cwd: info.cwd,
-      snippet: info.snippet ? clip(info.snippet, 2000) : undefined,
+      snippet: info.snippet ? clipText(info.snippet, MESSAGE_MAX) : undefined,
       model: info.model,
     }
   }

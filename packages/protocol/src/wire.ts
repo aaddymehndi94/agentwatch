@@ -30,7 +30,7 @@ export const SessionInfo = z.object({
   title: z.string().max(300).optional(),
   project: z.string().max(200).optional(),
   cwd: z.string().max(1000).optional(),
-  snippet: z.string().max(2000).optional(),
+  snippet: z.string().max(6000).optional(),
   model: z.string().max(100).optional(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
@@ -51,7 +51,7 @@ export const RequestInfo = z.object({
 })
 export type RequestInfo = z.infer<typeof RequestInfo>
 
-export const EventInfo = z.object({ text: z.string().max(2000).optional() })
+export const EventInfo = z.object({ text: z.string().max(6000).optional() })
 export type EventInfo = z.infer<typeof EventInfo>
 
 export const PushInfo = z.object({ title: z.string(), body: z.string() })

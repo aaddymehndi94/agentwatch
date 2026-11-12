@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { type AgentEvent, decide, literal, newSession, reduce, type Session, type Transition } from '../src/index.ts'
+import {
+  type AgentEvent,
+  clip,
+  clipText,
+  decide,
+  literal,
+  newSession,
+  reduce,
+  type Session,
+  type Transition,
+} from '../src/index.ts'
 
 function run(events: AgentEvent[], s: Session = newSession('s1', 'claude', 0)) {
   const transitions: Transition[] = []
@@ -151,5 +161,21 @@ describe('session state machine: restarts', () => {
     s = reduce(s, { type: 'session.start', at: 4 }).session
     expect(s.state).toBe('needs_you')
     expect(s.openRequests).toEqual(['r1'])
+  })
+})
+
+describe('clipText', () => {
+  it('keeps line breaks, indentation and code fences, so Markdown survives', () => {
+    const md = 'Done.\r\n\r\n\r\n\r\n- one\n  - nested   \n\n```ts\nconst x = 1\n```'
+    expect(clipText(md, 6000)).toBe('Done.\n\n- one\n  - nested\n\n```ts\nconst x = 1\n```')
+  })
+  it('cuts long text on a line or word boundary with an ellipsis', () => {
+    const out = clipText(`${'word '.repeat(50)}\n${'tail '.repeat(50)}`, 100)
+    expect(out.length).toBeLessThanOrEqual(100)
+    expect(out.endsWith('…')).toBe(true)
+    expect(out).not.toMatch(/wor…$/)
+  })
+  it('clip still makes one line', () => {
+    expect(clip('a\n\nb', 10)).toBe('a b')
   })
 })

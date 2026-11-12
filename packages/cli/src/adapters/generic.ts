@@ -3,7 +3,15 @@
 // - `agentwatch ask` opens a question (or a yes/no approval) and waits for the phone's answer.
 // Session ids are the caller's own names, kept apart from Claude's and Codex's ids with a `g:` prefix.
 
-import { clip, projectFromCwd, randomId, type SessionInfo, type SessionState } from '@agentwatch/protocol'
+import {
+  clip,
+  clipText,
+  MESSAGE_MAX,
+  projectFromCwd,
+  randomId,
+  type SessionInfo,
+  type SessionState,
+} from '@agentwatch/protocol'
 import { z } from 'zod'
 import type { AgentAdapter, Core } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
@@ -142,7 +150,8 @@ export class GenericAdapter implements AgentAdapter {
     switch (a.state) {
       case 'working':
         this.core.apply('generic', id, { type: 'turn.start', at }, { text: a.message })
-        if (a.message) this.core.apply('generic', id, { type: 'info', at, info: { snippet: clip(a.message, 2000) } })
+        if (a.message)
+          this.core.apply('generic', id, { type: 'info', at, info: { snippet: clipText(a.message, MESSAGE_MAX) } })
         break
       case 'idle':
         this.cancelOpen(id)
@@ -154,7 +163,8 @@ export class GenericAdapter implements AgentAdapter {
         this.pids.delete(id)
         break
       default:
-        if (a.message) this.core.apply('generic', id, { type: 'info', at, info: { snippet: clip(a.message, 2000) } })
+        if (a.message)
+          this.core.apply('generic', id, { type: 'info', at, info: { snippet: clipText(a.message, MESSAGE_MAX) } })
     }
     return { session: a.session, state: this.core.sessions.get(id)?.state ?? 'unknown' }
   }
