@@ -96,7 +96,12 @@ export async function relay(argv: string[]): Promise<number> {
   console.log('Deploying the relay to your Cloudflare account…')
   const d = await wrangler(bin, repo.relayDir, ['deploy'])
   if (d.code !== 0) {
-    console.error('\nwrangler deploy failed (see above).')
+    if (/workers\.dev subdomain/i.test(d.out)) {
+      // A new Cloudflare account: its workers.dev subdomain is picked once, in the dashboard.
+      console.error('\nYour Cloudflare account needs a workers.dev subdomain first (a one-time choice). Open')
+      console.error('dash.cloudflare.com → Workers & Pages, pick one, then run `agentwatch relay deploy` again.')
+      console.error('The relay will be at https://agentwatch.<subdomain>.workers.dev.')
+    } else console.error('\nwrangler deploy failed (see above).')
     return 1
   }
   const url = /https:\/\/[a-z0-9.-]+\.workers\.dev/i.exec(d.out)?.[0]
