@@ -72,10 +72,14 @@ describe('fail-open hook', () => {
 
 describe('walking skeleton', () => {
   it('setup claims the relay and starts a connected daemon', async () => {
-    const r = await run(BIN, ['setup', '--relay', relay.url, '--claim-secret', relay.claimSecret], home)
+    const r = await run(BIN, ['setup', '--relay', relay.url, '--claim-secret', relay.claimSecret, '--no-claude'], home)
     expect(r.stderr).toBe('')
     expect(r.code).toBe(0)
-    expect(r.stdout).toContain('connected to your relay')
+    expect(r.stdout).toContain('✓ Daemon running, connected to')
+    expect(r.stdout).toContain('Next: `agentwatch pair`')
+    // Installed into AGENTWATCH_HOME: the launcher fails open on its own.
+    expect(fs.readlinkSync(path.join(home, 'install', 'current'))).toMatch(/^versions\//)
+    expect(fs.statSync(path.join(home, 'install', 'hook')).mode & 0o111).toBeTruthy()
     const cfgFile = path.join(home, 'config.json')
     expect(fs.statSync(cfgFile).mode & 0o777).toBe(0o600)
     expect(fs.statSync(path.join(home, 'state')).mode & 0o777).toBe(0o700)
@@ -238,6 +242,35 @@ describe('pairing, phones and notifications', () => {
     expect((await other.fetch('GET', '/api/state')).status).toBe(401)
     expect((await phone.fetch('GET', '/api/state')).status).toBe(200)
   }, 30_000)
+
+  it('`agentwatch invite` + `join` add another OS user that shares the key and keeps its own privacy', async () => {
+    const inv = await run(BIN, ['invite', '--json'], home)
+    expect(inv.code).toBe(0)
+    const { link } = JSON.parse(inv.stdout) as { link: string }
+    expect(link).toMatch(/#\/join\//)
+    const home2 = tempHome()
+    try {
+      const j = await run(BIN, ['join', '--privacy', 'summary', '--no-claude'], home2, `${link}\n`)
+      expect(j.stderr).toBe('')
+      expect(j.code).toBe(0)
+      const read = (h: string) => JSON.parse(fs.readFileSync(path.join(h, 'config.json'), 'utf8'))
+      const [one, two] = [read(home), read(home2)]
+      expect(two.vaultKey).toBe(one.vaultKey)
+      expect(two.sourceId).not.toBe(one.sourceId)
+      expect(two.privacy).toBe('summary')
+      expect(fs.statSync(path.join(home2, 'config.json')).mode & 0o777).toBe(0o600)
+      const src = await waitFor('second source online', async () =>
+        (await phone.state()).sources.find((s) => s.id === two.sourceId && s.online),
+      )
+      expect(src.privacy).toBe('summary')
+      const again = await run(BIN, ['join', '--no-claude', '--force'], home2, `${link}\n`)
+      expect(again.code).toBe(1)
+      expect(again.stderr).toMatch(/expired or was already used/)
+    } finally {
+      await run(BIN, ['stop'], home2).catch(() => {})
+      fs.rmSync(home2, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   it('`agentwatch mute` mutes every phone until the given time, and `mute off` clears it', async () => {
     const before = Date.now()

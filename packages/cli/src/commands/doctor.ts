@@ -37,6 +37,13 @@ export async function doctor(args: string[]): Promise<number> {
   if (mode & 0o077) add('warn', `Config is readable by others (${mode.toString(8)})`, `Run: chmod 600 ${p.configFile}`)
   else add('ok', `Config ${tilde(p.configFile)}`, `privacy ${cfg.privacy}, replies ${cfg.allowMessages ? 'on' : 'off'}`)
 
+  try {
+    const st = fs.statSync(p.stateDir).mode & 0o777
+    if (st & 0o077)
+      add('fail', `State folder is open to other users (${st.toString(8)})`, `Run: chmod 700 ${p.stateDir}`)
+    else add('ok', `Daemon socket folder is private (${tilde(p.stateDir)})`)
+  } catch {}
+
   const launcher = path.join(p.installDir, 'hook')
   if (isExecutable(launcher)) add('ok', `Hook launcher ${tilde(launcher)}`)
   else

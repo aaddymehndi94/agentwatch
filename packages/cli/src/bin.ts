@@ -2,22 +2,33 @@
 
 import { VERSION } from './version.ts'
 
-const HELP = `agentwatch ${VERSION} — a pager for your coding agents
+const HELP = `agentwatch ${VERSION}: a pager for your coding agents
 
 Usage: agentwatch <command> [options]
 
 Getting started
-  setup --relay <url> --claim-secret <secret>   Connect this OS user to your relay (first machine)
+  relay deploy                                  Deploy your relay to Cloudflare (wrangler) and claim it
+  setup --relay <url> --claim-secret <secret>   Connect this OS user to a relay you deployed another way
   pair                                          Pair a phone (shows a QR code and link)
-  status                                        What the daemon sees right now
+  invite                                        Invite another OS user or computer to this relay
+  join                                          Join a relay with an invite (pasted on stdin)
   doctor [--test-push]                          Check every link from this user to your phone
 
 Everyday
+  status                                        What the daemon sees right now
   mute [30m|1h|8h|until 08:00|off]              Pause notifications to every phone (default 1h)
+  setup                                         Re-run any time to update and repair the install
+
+Options for setup, join and relay deploy
+  --privacy full|summary    summary: no text (prompts, commands, replies) ever leaves this user
+  --no-messages             don't accept free-text replies from the phone (approvals still work)
+  --no-claude               don't install the Claude Code plugin
+  --node <path>             Node (22+) for the hook launchers; picked automatically otherwise
 
 Daemon
   daemon [--foreground]                         Run the daemon (normally started on demand by hooks)
   stop                                          Stop this user's daemon
+  uninstall [--purge]                           Remove AgentWatch for this user (--purge: config and key too)
 
 Internal
   hook <agent>                                  Hook client agents call (reads the event on stdin)`
@@ -52,6 +63,14 @@ async function main(argv: string[]): Promise<number> {
       return (await import('./commands/status.ts')).status(rest)
     case 'stop':
       return (await import('./commands/status.ts')).stop()
+    case 'join':
+      return (await import('./commands/join.ts')).join(rest)
+    case 'invite':
+      return (await import('./commands/invite.ts')).invite(rest)
+    case 'uninstall':
+      return (await import('./commands/uninstall.ts')).uninstall(rest)
+    case 'relay':
+      return (await import('./commands/relay.ts')).relay(rest)
     case 'doctor':
       return (await import('./commands/doctor.ts')).doctor(rest)
     case 'mute':

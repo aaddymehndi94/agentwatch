@@ -81,7 +81,17 @@ export function tempHome(): string {
 }
 
 export function env(home: string): NodeJS.ProcessEnv {
-  return { ...process.env, AGENTWATCH_HOME: home, AGENTWATCH_DEBUG: '1' }
+  // A private HOME and Claude config too, so nothing a test runs can touch the real user's files.
+  const fakeHome = path.join(home, 'home')
+  fs.mkdirSync(fakeHome, { recursive: true })
+  return {
+    ...process.env,
+    HOME: fakeHome,
+    CLAUDE_CONFIG_DIR: path.join(fakeHome, '.claude'),
+    XDG_BIN_HOME: path.join(fakeHome, '.local/bin'),
+    AGENTWATCH_HOME: home,
+    AGENTWATCH_DEBUG: '1',
+  }
 }
 
 export interface RunResult {

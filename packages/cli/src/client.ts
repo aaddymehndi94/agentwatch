@@ -48,11 +48,14 @@ export function call<T = unknown>(
 }
 
 /** Make sure the daemon is running (spawning it detached if not). Resolves true once its socket answers. */
-export async function ensureDaemon(p: Paths = paths(), waitMs = 4000): Promise<boolean> {
+export async function ensureDaemon(
+  p: Paths = paths(),
+  waitMs = 4000,
+  run: { node: string; entry: string | undefined } = { node: process.execPath, entry: process.argv[1] },
+): Promise<boolean> {
   if (await socketAlive(p.socket)) return true
-  const entry = process.argv[1]
-  if (!entry) return false
-  const child = spawn(process.execPath, [entry, 'daemon'], { detached: true, stdio: 'ignore', env: process.env })
+  if (!run.entry) return false
+  const child = spawn(run.node, [run.entry, 'daemon'], { detached: true, stdio: 'ignore', env: process.env })
   child.unref()
   const until = Date.now() + waitMs
   while (Date.now() < until) {
