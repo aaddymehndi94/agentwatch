@@ -1,6 +1,8 @@
-// One session: its open request(s), the last thing the agent said, a short timeline, and the reply composer.
+// One session as a conversation: your prompts, the agent's replies (rendered Markdown), what it asked for and how
+// that was answered, then anything still waiting on you and the reply composer.
 
-import { useEffect, useState } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { getEvents } from '../lib/api.ts'
 import { demoEvents } from '../lib/demo.ts'
 import {
@@ -8,6 +10,7 @@ import {
   decryptEvents,
   type EventVM,
   projectName,
+  type SessionVM,
   STATE_LABEL,
   sessionKey,
   sourceLabel,
@@ -15,17 +18,57 @@ import {
 } from '../lib/model.ts'
 import { type AppState, sendCommand } from '../lib/store.ts'
 import { ago, clock, duration } from '../lib/time.ts'
-import { Alert, Back, Check, Send } from '../ui/icons.tsx'
+import { TopBar } from '../ui/bar.tsx'
+import { Alert, Check, Offline, Phone, Send, Stop, Terminal } from '../ui/icons.tsx'
+import { Markdown } from '../ui/markdown.tsx'
 import { Ticket } from '../ui/ticket.tsx'
 
-const EVENT_LABEL: Record<string, string> = {
-  prompted: 'You asked',
-  needs_you: 'Needed you',
-  answered: 'Answered',
-  done: 'Finished',
-  ended: 'Ended',
-  replied: 'You replied',
-  started: 'Started',
+type Item =
+  | { k: 'you'; at: number; text: string; phone: boolean }
+  | { k: 'agent'; at: number; text: string; latest: boolean }
+  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info'; label: string; text?: string }
+
+/** The timeline, oldest first, plus the latest message if the timeline doesn't already end with it. */
+function thread(events: EventVM[], s: SessionVM): Item[] {
+  const items: Item[] = []
+  for (const e of [...events].sort((a, b) => a.at - b.at)) {
+    switch (e.kind) {
+      case 'prompted':
+      case 'replied':
+        items.push(
+          e.text
+            ? { k: 'you', at: e.at, text: e.text, phone: e.kind === 'replied' }
+            : { k: 'sys', at: e.at, icon: 'info', label: e.kind === 'replied' ? 'You replied' : 'You sent a prompt' },
+        )
+        break
+      case 'done':
+        items.push(
+          e.text
+            ? { k: 'agent', at: e.at, text: e.text, latest: false }
+            : { k: 'sys', at: e.at, icon: 'ok', label: 'Finished a turn' },
+        )
+        break
+      case 'needs_you':
+        items.push({ k: 'sys', at: e.at, icon: 'ask', label: 'Asked for you', text: e.text })
+        break
+      case 'answered':
+        items.push({ k: 'sys', at: e.at, icon: 'ok', label: e.text ?? 'Answered' })
+        break
+      case 'ended':
+        items.push({ k: 'sys', at: e.at, icon: 'end', label: 'Session ended' })
+        break
+      default:
+        items.push({ k: 'sys', at: e.at, icon: 'info', label: e.kind })
+    }
+  }
+  const snippet = s.info?.snippet?.trim()
+  if (snippet) {
+    const lastAgent = [...items].reverse().find((i) => i.k === 'agent')
+    if (!lastAgent || lastAgent.text.trim() !== snippet) {
+      items.push({ k: 'agent', at: s.updatedAt, text: snippet, latest: s.state === 'working' })
+    }
+  }
+  return items
 }
 
 export function SessionScreen(props: {
@@ -42,46 +85,95 @@ export function SessionScreen(props: {
   const requests = (model?.requests ?? []).filter(
     (r) => r.sourceId === sourceId && r.sessionId === sessionId && (r.status === 'open' || app.pending[r.id]),
   )
-  const events = useEvents(app, sourceId, sessionId, s?.updatedAt ?? 0)
+  const { events, loaded } = useEvents(app, sourceId, sessionId, s?.updatedAt ?? 0)
   const t = now + (model?.skew ?? 0)
+  const items = s ? thread(events, s) : []
+  const opened = useRef(false)
+  const seen = useRef(0)
+  // Measured before this render lands: were you reading the newest message?
+  const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 96
+
+  // Open at the newest message once the timeline is in, then follow new ones only while you're at the bottom.
+  useLayoutEffect(() => {
+    if (!s || !loaded) return
+    const count = items.length + requests.length
+    if (opened.current && count === seen.current) return
+    if (!opened.current || atBottom) scrollTo({ top: document.documentElement.scrollHeight })
+    opened.current = true
+    seen.current = count
+  })
 
   return (
     <>
-      <header class="topbar">
-        <button type="button" class="icon-btn" onClick={() => go('#/')} aria-label="Back to inbox">
-          <Back />
-        </button>
-        <h1>
-          <span class="title-text">{s ? projectName(s) : 'Session'}</span>
-        </h1>
-      </header>
+      <TopBar
+        back={() => go('#/')}
+        title={s ? projectName(s) : 'Session'}
+        sub={
+          s && (
+            <>
+              <span class="orb small" data-state={s.state} aria-hidden="true" />
+              <span class="state-word" data-state={s.state}>
+                {STATE_LABEL[s.state]}
+              </span>
+              <span class="sep" aria-hidden="true" />
+              {agentLabel(s.agent)}
+              <span class="sep" aria-hidden="true" />
+              <span class="mono">{sourceLabel(source)}</span>
+            </>
+          )
+        }
+      />
       {!s ? (
         <div class="empty">
-          <h2>This session is gone</h2>
+          <h1>This session is gone</h1>
           <p>It may have ended a while ago and been cleaned up.</p>
         </div>
       ) : (
-        <div class="page">
+        <div class="convo">
           {source && !source.online && (
-            <p class="stale-note">
-              {sourceLabel(source)} has been offline for {ago(source.lastSeen, t)}. This is what it last reported.
+            <div class="banner" role="status">
+              <Offline />
+              <p>
+                {sourceLabel(source)} has been offline for {ago(source.lastSeen, t)}. This is what it last reported.
+              </p>
+            </div>
+          )}
+          {s.info?.title && s.info.title !== projectName(s) && (
+            <header class="convo-head">
+              <h1>{s.info.title}</h1>
+              <p>
+                Started {clock(s.startedAt)}
+                <span class="sep" aria-hidden="true" />
+                {s.state === 'ended'
+                  ? `Ended ${ago(s.stateSince, t)} ago`
+                  : `${STATE_LABEL[s.state]} for ${
+                      s.state === 'working' && s.turnStartedAt ? duration(t - s.turnStartedAt) : ago(s.stateSince, t)
+                    }`}
+              </p>
+            </header>
+          )}
+          {items.length === 0 && requests.length === 0 && (
+            <p class="convo-empty">
+              Nothing here yet. Your prompts, {agentLabel(s.agent)}’s replies and anything it asks for appear as they
+              happen.
             </p>
           )}
-          <div class="session-head">
-            {s.info?.title && s.info.title !== projectName(s) && <h2>{s.info.title}</h2>}
-            <p class="sub">
-              <span class={`state ${s.state}`}>{STATE_LABEL[s.state]}</span>
-              <span>
-                {s.state === 'ended'
-                  ? `${ago(s.stateSince, t)} ago`
-                  : `for ${s.state === 'working' && s.turnStartedAt ? duration(t - s.turnStartedAt) : ago(s.stateSince, t)}`}
-              </span>
-              <span>{agentLabel(s.agent)}</span>
-              <span class="mono">{sourceLabel(source)}</span>
-            </p>
-          </div>
+          <ol class="thread">
+            {items.map((it, i) => (
+              <li key={`${it.at}-${i}`}>
+                <Message item={it} agent={agentLabel(s.agent)} />
+              </li>
+            ))}
+          </ol>
+          {s.state === 'working' && (
+            <div class="working" role="status">
+              <span class="orb" data-state="working" aria-hidden="true" />
+              <span class="shimmer">{agentLabel(s.agent)} is working</span>
+              {s.turnStartedAt && <span class="num">{duration(t - s.turnStartedAt)}</span>}
+            </div>
+          )}
           {requests.length > 0 && (
-            <div class="session-tickets">
+            <div class="stack">
               {requests.map((r) => (
                 <Ticket
                   key={r.id}
@@ -95,43 +187,81 @@ export function SessionScreen(props: {
               ))}
             </div>
           )}
-          {s.info?.snippet && (
-            <div class="last">
-              <span class="proof-label">{s.state === 'working' ? 'Latest' : 'Last message'}</span>
-              {s.info.snippet}
-            </div>
-          )}
-          {events.length > 0 && (
-            <>
-              <div class="section-head" style={{ padding: 0 }}>
-                <h2>Recent</h2>
-              </div>
-              <ol class="timeline">
-                {events.map((e) => (
-                  <li key={`${e.at}-${e.kind}`}>
-                    <time dateTime={new Date(e.at).toISOString()}>{clock(e.at)}</time>
-                    <div>
-                      <span class="what">{EVENT_LABEL[e.kind] ?? e.kind}</span>
-                      {e.text && <span class="text">{e.text}</span>}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </>
-          )}
-          <Composer app={app} sourceId={sourceId} sessionId={sessionId} offline={!!source && !source.online} />
+          <Composer app={app} s={s} offline={!!source && !source.online} />
         </div>
       )}
     </>
   )
 }
 
-function useEvents(app: AppState, sourceId: string, sessionId: string, version: number): EventVM[] {
+function Message({ item, agent }: { item: Item; agent: string }): ComponentChildren {
+  if (item.k === 'you') {
+    return (
+      <div class="msg you">
+        <div class="bubble">
+          <Markdown text={item.text} />
+        </div>
+        <div class="msg-meta">
+          {item.phone && (
+            <>
+              <Phone /> From your phone
+              <span class="sep" aria-hidden="true" />
+            </>
+          )}
+          <time dateTime={new Date(item.at).toISOString()}>{clock(item.at)}</time>
+        </div>
+      </div>
+    )
+  }
+  if (item.k === 'agent') {
+    return (
+      <div class="msg agent">
+        <div class="msg-head">
+          <span class="avatar" aria-hidden="true">
+            {agent[0]}
+          </span>
+          <span class="who">{agent}</span>
+          <time dateTime={new Date(item.at).toISOString()}>{item.latest ? 'Latest' : clock(item.at)}</time>
+        </div>
+        <Markdown text={item.text} class="agent-md" />
+      </div>
+    )
+  }
+  return (
+    <div class={`sys ${item.icon}`}>
+      <span class="sys-icon" aria-hidden="true">
+        {item.icon === 'ask' ? (
+          <Terminal />
+        ) : item.icon === 'ok' ? (
+          <Check />
+        ) : item.icon === 'end' ? (
+          <Stop />
+        ) : (
+          <Alert />
+        )}
+      </span>
+      <span class="sys-main">
+        <span class="sys-label">{item.label}</span>
+        {item.text && <code class="sys-text">{item.text}</code>}
+      </span>
+      <time dateTime={new Date(item.at).toISOString()}>{clock(item.at)}</time>
+    </div>
+  )
+}
+
+function useEvents(
+  app: AppState,
+  sourceId: string,
+  sessionId: string,
+  version: number,
+): { events: EventVM[]; loaded: boolean } {
   const [events, setEvents] = useState<EventVM[]>([])
+  const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     let live = true
     if (app.demo) {
-      setEvents(demoEvents())
+      setEvents(demoEvents(Date.now(), sessionId))
+      setLoaded(true)
       return
     }
     const creds = app.creds
@@ -142,35 +272,41 @@ function useEvents(app: AppState, sourceId: string, sessionId: string, version: 
         const list = await decryptEvents(raw, sourceId, sessionId, await vaultKey(creds.vaultKey))
         if (live) setEvents(list)
       } catch {}
+      if (live) setLoaded(true)
     })()
     return () => {
       live = false
     }
   }, [app.creds, app.demo, sourceId, sessionId, version])
-  return events
+  return { events, loaded }
 }
 
 /** Common follow-ups. A tap fills the box, so nothing is sent until you press Send. */
-const QUICK_REPLIES = ['Continue', 'Yes, go ahead', 'Summarize']
+const QUICK_REPLIES = ['Continue', 'Yes, go ahead', 'Summarize what you did', 'Run the tests']
 
-function Composer(props: { app: AppState; sourceId: string; sessionId: string; offline: boolean }) {
-  const { app, sourceId, sessionId } = props
-  const s = app.model?.sessions.find((x) => x.sourceId === sourceId && x.id === sessionId)
+function Composer({ app, s, offline }: { app: AppState; s: SessionVM; offline: boolean }) {
   const [text, setText] = useState('')
-  const key = `msg:${sessionKey(sourceId, sessionId)}`
+  const box = useRef<HTMLTextAreaElement>(null)
+  const key = `msg:${sessionKey(s.sourceId, s.id)}`
   const pending = app.pending[key]
-  if (!s || s.state === 'ended') return null
-  if (props.offline && !pending) {
+  // Grow with the text, up to a few lines.
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [text])
+  if (s.state === 'ended') return null
+  const why =
+    offline && !pending
+      ? 'Replies can’t reach this computer while it’s offline.'
+      : !s.caps.reply
+        ? (s.caps.replyReason ?? 'Replies aren’t available for this session.')
+        : null
+  if (why) {
     return (
       <div class="composer">
-        <p class="why">Replies can’t reach this computer while it’s offline.</p>
-      </div>
-    )
-  }
-  if (!s.caps.reply) {
-    return (
-      <div class="composer">
-        <p class="why">{s.caps.replyReason ?? 'Replies aren’t available for this session.'}</p>
+        <p class="composer-why">{why}</p>
       </div>
     )
   }
@@ -178,7 +314,13 @@ function Composer(props: { app: AppState; sourceId: string; sessionId: string; o
     e.preventDefault()
     const body = text.trim()
     if (!body) return
-    const ok = await sendCommand({ key, label: 'Sent', sourceId, sessionId, body: { kind: 'message', text: body } })
+    const ok = await sendCommand({
+      key,
+      label: 'Sent',
+      sourceId: s.sourceId,
+      sessionId: s.id,
+      body: { kind: 'message', text: body },
+    })
     if (ok) setText('')
   }
   return (
@@ -191,7 +333,7 @@ function Composer(props: { app: AppState; sourceId: string; sessionId: string; o
                 type="button"
                 onClick={() => {
                   setText(q)
-                  document.getElementById('reply')?.focus()
+                  box.current?.focus()
                 }}
               >
                 {q}
@@ -200,30 +342,31 @@ function Composer(props: { app: AppState; sourceId: string; sessionId: string; o
           ))}
         </ul>
       )}
-      <form onSubmit={submit}>
+      <form onSubmit={submit} class="composer-box">
         <label class="visually-hidden" for="reply">
           Reply to {agentLabel(s.agent)}
         </label>
         <textarea
           id="reply"
+          ref={box}
           rows={1}
           maxLength={8000}
           placeholder={`Reply to ${agentLabel(s.agent)}…`}
           value={text}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit(e)
+          }}
         />
-        <button
-          type="submit"
-          class="btn primary"
-          disabled={!text.trim() || pending?.status === 'sending'}
-          aria-label="Send"
-          style={{ padding: '0 14px' }}
-        >
-          <Send />
+        <button type="submit" class="send" disabled={!text.trim() || pending?.status === 'sending'} aria-label="Send">
+          {pending?.status === 'sending' ? <span class="spinner" aria-hidden="true" /> : <Send />}
         </button>
       </form>
-      {pending && (
-        <p class="note" role="status">
+      {pending && pending.status !== 'sending' && (
+        <p
+          class={`composer-note ${pending.status === 'rejected' || pending.status === 'failed' ? 'bad' : ''}`}
+          role="status"
+        >
           {pending.status === 'applied' ? (
             <>
               <Check /> Delivered as your next prompt.
@@ -233,7 +376,7 @@ function Composer(props: { app: AppState; sourceId: string; sessionId: string; o
               <Alert /> {pending.detail ?? 'Not delivered.'}
             </>
           ) : (
-            'Sending…'
+            'Sent. Waiting for your computer…'
           )}
         </p>
       )}

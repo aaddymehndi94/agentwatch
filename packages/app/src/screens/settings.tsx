@@ -1,50 +1,42 @@
 // Settings: notifications, mute, machines, paired devices, appearance, and unpairing.
 
+import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { api, type DeviceInfo } from '../lib/api.ts'
 import { sourceLabel } from '../lib/model.ts'
 import { currentSubscription, disablePush, enablePush, pushSupport, testPush } from '../lib/push.ts'
 import { type AppState, forgetDevice, refresh, setMuteLocal, setTheme, type Theme } from '../lib/store.ts'
 import { ago, clock } from '../lib/time.ts'
-import { Back } from '../ui/icons.tsx'
+import { TopBar } from '../ui/bar.tsx'
+import { Laptop, Phone } from '../ui/icons.tsx'
 
 declare const __APP_VERSION__: string
 
 export function SettingsScreen({ app, now, go }: { app: AppState; now: number; go: (hash: string) => void }) {
   return (
     <>
-      <header class="topbar">
-        <button type="button" class="icon-btn" onClick={() => go('#/')} aria-label="Back to inbox">
-          <Back />
-        </button>
-        <h1>
-          <span class="title-text">Settings</span>
-        </h1>
-      </header>
+      <TopBar back={() => go('#/')} title="Settings" />
       <div class="page">
         <Notifications app={app} />
         <Mute app={app} now={now} />
         <Machines app={app} now={now} />
         <Devices app={app} now={now} />
         <Appearance app={app} />
-        <div class="section-head" style={{ padding: 0 }}>
-          <h2>This phone</h2>
-        </div>
-        <div class="panel">
+        <Group title="This phone">
           <div class="item">
-            <span class="grow">
+            <span class="item-main">
               <span class="label">Relay</span>
               <span class="hint mono">{location.host}</span>
             </span>
           </div>
           <div class="item">
-            <span class="grow">
+            <span class="item-main">
               <span class="label">Unpair this phone</span>
               <span class="hint">Removes its key and stops notifications. You can pair again any time.</span>
             </span>
             <button
               type="button"
-              class="btn quiet"
+              class="btn quiet small danger"
               onClick={async () => {
                 if (!confirm('Unpair this phone? It will stop receiving notifications.')) return
                 await forgetDevice()
@@ -54,10 +46,52 @@ export function SettingsScreen({ app, now, go }: { app: AppState; now: number; g
               Unpair
             </button>
           </div>
-        </div>
-        <p class="fine">AgentWatch {typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''}</p>
+        </Group>
+        <p class="fine center">AgentWatch {typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''}</p>
       </div>
     </>
+  )
+}
+
+function Group(props: {
+  title: string
+  aside?: ComponentChildren
+  foot?: ComponentChildren
+  children: ComponentChildren
+}) {
+  return (
+    <section class="sgroup">
+      <div class="sgroup-head">
+        <h2>{props.title}</h2>
+        {props.aside && <span class="sgroup-aside">{props.aside}</span>}
+      </div>
+      <div class="list">{props.children}</div>
+      {props.foot && <p class="fine">{props.foot}</p>}
+    </section>
+  )
+}
+
+/** A segmented control whose highlight slides to the chosen option. */
+function Segmented<T>(props: {
+  label: string
+  options: { label: string; value: T }[]
+  isOn: (v: T) => boolean
+  set: (v: T) => void
+}) {
+  const index = props.options.findIndex((o) => props.isOn(o.value))
+  return (
+    <fieldset
+      class="segmented"
+      style={{ '--n': String(props.options.length), '--i': String(index) }}
+      data-none={index < 0 ? '' : undefined}
+    >
+      <legend class="visually-hidden">{props.label}</legend>
+      {props.options.map((o) => (
+        <button type="button" key={o.label} aria-pressed={props.isOn(o.value)} onClick={() => props.set(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </fieldset>
   )
 }
 
@@ -83,59 +117,54 @@ function Notifications({ app }: { app: AppState }) {
     }
   }
   return (
-    <>
-      <div class="section-head" style={{ padding: 0 }}>
-        <h2>Notifications</h2>
-      </div>
-      <div class="panel">
-        <div class="item">
-          <span class="grow">
-            <span class="label">Push notifications</span>
-            <span class="hint">
-              {support === 'ok'
-                ? on
-                  ? 'On for this phone.'
-                  : 'Off for this phone.'
-                : support === 'needs-install'
-                  ? 'Add AgentWatch to your Home Screen to get notifications.'
-                  : 'Not supported in this browser.'}
-            </span>
+    <Group title="Notifications">
+      <div class="item">
+        <span class="item-main">
+          <span class="label">Push notifications</span>
+          <span class="hint">
+            {support === 'ok'
+              ? on
+                ? 'On for this phone.'
+                : 'Off for this phone.'
+              : support === 'needs-install'
+                ? 'Add AgentWatch to your Home Screen to get notifications.'
+                : 'Not supported in this browser.'}
           </span>
-          {support === 'ok' && on !== null && (
-            <button
-              type="button"
-              class={`btn ${on ? 'quiet' : 'primary'}`}
-              disabled={busy || app.demo}
-              onClick={() =>
-                run(async () => {
-                  if (on) await disablePush(token)
-                  else await enablePush(token)
-                  setOn(!on)
-                })
-              }
-            >
-              {on ? 'Turn off' : 'Turn on'}
-            </button>
-          )}
-        </div>
-        {support === 'ok' && on && (
-          <div class="item">
-            <span class="grow">
-              <span class="label">Test</span>
-              <span class="hint">{msg || 'Send a notification to this phone now.'}</span>
-            </span>
-            <button
-              type="button"
-              class="btn quiet"
-              disabled={busy}
-              onClick={() => run(() => testPush(token), 'Sent. It should arrive within a few seconds.')}
-            >
-              Send test
-            </button>
-          </div>
+        </span>
+        {support === 'ok' && on !== null && (
+          <button
+            type="button"
+            class={`btn small ${on ? 'quiet' : 'primary'}`}
+            disabled={busy || app.demo}
+            onClick={() =>
+              run(async () => {
+                if (on) await disablePush(token)
+                else await enablePush(token)
+                setOn(!on)
+              })
+            }
+          >
+            {on ? 'Turn off' : 'Turn on'}
+          </button>
         )}
       </div>
-    </>
+      {support === 'ok' && on && (
+        <div class="item">
+          <span class="item-main">
+            <span class="label">Test</span>
+            <span class="hint">{msg || 'Send a notification to this phone now.'}</span>
+          </span>
+          <button
+            type="button"
+            class="btn quiet small"
+            disabled={busy}
+            onClick={() => run(() => testPush(token), 'Sent. It should arrive within a few seconds.')}
+          >
+            Send test
+          </button>
+        </div>
+      )}
+    </Group>
   )
 }
 
@@ -162,67 +191,56 @@ function Mute({ app, now }: { app: AppState; now: number }) {
     }
   }
   return (
-    <>
-      <div class="section-head" style={{ padding: 0 }}>
+    <section class="sgroup">
+      <div class="sgroup-head">
         <h2>Mute</h2>
-        <span class="hint" style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-          {mute ? `Until ${clock(mute)}` : 'Not muted'}
-        </span>
+        <span class="sgroup-aside">{mute ? `Until ${clock(mute)}` : 'Not muted'}</span>
       </div>
-      <fieldset class="segmented">
-        <legend class="visually-hidden">Mute notifications</legend>
-        {options.map((o) => (
-          <button
-            type="button"
-            key={o.label}
-            aria-pressed={o.until === null ? mute === null : false}
-            onClick={() => set(o.until)}
-          >
-            {o.label}
-          </button>
-        ))}
-      </fieldset>
-      <p class="fine" style={{ marginTop: 6 }}>
-        Muting applies to every paired phone. The app still shows everything.
-      </p>
-    </>
+      <Segmented
+        label="Mute notifications"
+        options={options.map((o) => ({ label: o.label, value: o }))}
+        isOn={(o) => (o.until === null ? mute === null : false)}
+        set={(o) => void set(o.until)}
+      />
+      <p class="fine">Muting applies to every paired phone. The app still shows everything.</p>
+    </section>
   )
 }
 
 function Machines({ app, now }: { app: AppState; now: number }) {
   const sources = app.model?.sources ?? []
   return (
-    <>
-      <div class="section-head" style={{ padding: 0 }}>
-        <h2>Computers</h2>
-      </div>
-      <div class="panel">
-        {sources.length === 0 && (
-          <div class="item">
+    <Group title="Computers">
+      {sources.length === 0 && (
+        <div class="item">
+          <span class="hint">
+            None yet. Run <code>agentwatch setup</code> on a computer.
+          </span>
+        </div>
+      )}
+      {sources.map((s) => (
+        <div class="item top" key={s.id}>
+          <span class={`item-icon ${s.online ? 'on' : ''}`}>
+            <Laptop />
+          </span>
+          <span class="item-main">
+            <span class="label mono">{sourceLabel(s)}</span>
             <span class="hint">
-              None yet. Run <code>agentwatch setup</code> on a computer.
+              <span class={`dot ${s.online ? '' : 'off'}`} />
+              {s.online ? 'Online' : `Offline · last seen ${ago(s.lastSeen, now)} ago`}
             </span>
-          </div>
-        )}
-        {sources.map((s) => (
-          <div class="item top" key={s.id}>
-            <span class={`dot ${s.online ? '' : 'off'}`} />
-            <span class="grow">
-              <span class="label mono">{sourceLabel(s)}</span>
-              <span class="hint">{s.online ? 'Online' : `Offline · last seen ${ago(s.lastSeen, now)} ago`}</span>
-              <span class="hint">
-                {s.privacy === 'summary' ? 'Summary privacy: no text leaves it' : 'Full detail'}
-                {s.allowMessages ? '' : ' · No replies'}
-              </span>
-              <span class="hint">
-                {Object.values(s.adapters).join(', ') || 'No agents yet'}
-                {s.daemonVersion ? ` · agentwatch ${s.daemonVersion}` : ''}
-              </span>
+            <span class="hint">
+              {s.privacy === 'summary' ? 'Summary privacy: no text leaves it' : 'Full detail'}
+              {s.allowMessages ? '' : ' · No replies'}
             </span>
-          </div>
-        ))}
-      </div>
-    </>
+            <span class="hint">
+              {Object.values(s.adapters).join(', ') || 'No agents yet'}
+              {s.daemonVersion ? ` · agentwatch ${s.daemonVersion}` : ''}
+            </span>
+          </span>
+        </div>
+      ))}
+    </Group>
   )
 }
 
@@ -238,39 +256,37 @@ function Devices({ app, now }: { app: AppState; now: number }) {
   useEffect(load, [token])
   if (!devices || devices.length === 0) return null
   return (
-    <>
-      <div class="section-head" style={{ padding: 0 }}>
-        <h2>Paired phones</h2>
-      </div>
-      <div class="panel">
-        {devices.map((d) => (
-          <div class="item" key={d.id}>
-            <span class="grow">
-              <span class="label">{d.name}</span>
-              <span class="hint">
-                Paired {new Date(d.createdAt).toLocaleDateString()} · active {ago(d.lastSeen, now)} ago
-              </span>
+    <Group title="Paired phones">
+      {devices.map((d) => (
+        <div class="item" key={d.id}>
+          <span class="item-icon">
+            <Phone />
+          </span>
+          <span class="item-main">
+            <span class="label">{d.name}</span>
+            <span class="hint">
+              Paired {new Date(d.createdAt).toLocaleDateString()} · active {ago(d.lastSeen, now)} ago
             </span>
-            {d.self ? (
-              <span class="tag">This phone</span>
-            ) : (
-              <button
-                type="button"
-                class="btn quiet"
-                onClick={async () => {
-                  const ask = `Remove ${d.name}? It is signed out at once. If it was lost or stolen, also run \`agentwatch rotate\` on your computer: the phone still holds the key.`
-                  if (!token || !confirm(ask)) return
-                  await api(token, 'DELETE', `/api/devices/${d.id}`).catch(() => {})
-                  load()
-                }}
-              >
-                Remove
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </>
+          </span>
+          {d.self ? (
+            <span class="tag">This phone</span>
+          ) : (
+            <button
+              type="button"
+              class="btn quiet small danger"
+              onClick={async () => {
+                const ask = `Remove ${d.name}? It is signed out at once. If it was lost or stolen, also run \`agentwatch rotate\` on your computer: the phone still holds the key.`
+                if (!token || !confirm(ask)) return
+                await api(token, 'DELETE', `/api/devices/${d.id}`).catch(() => {})
+                load()
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+    </Group>
   )
 }
 
@@ -281,18 +297,11 @@ function Appearance({ app }: { app: AppState }) {
     { label: 'Dark', value: 'dark' },
   ]
   return (
-    <>
-      <div class="section-head" style={{ padding: 0 }}>
+    <section class="sgroup">
+      <div class="sgroup-head">
         <h2>Appearance</h2>
       </div>
-      <fieldset class="segmented">
-        <legend class="visually-hidden">Theme</legend>
-        {options.map((o) => (
-          <button type="button" key={o.value} aria-pressed={app.theme === o.value} onClick={() => setTheme(o.value)}>
-            {o.label}
-          </button>
-        ))}
-      </fieldset>
-    </>
+      <Segmented label="Theme" options={options} isOn={(v) => app.theme === v} set={(v) => void setTheme(v)} />
+    </section>
   )
 }

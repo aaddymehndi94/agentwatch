@@ -5,7 +5,7 @@ import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
 import { enablePush, isIos, isStandalone, pushSupport, testPush } from '../lib/push.ts'
 import { type AppState, pairWithCode } from '../lib/store.ts'
-import { Check, Copy } from '../ui/icons.tsx'
+import { Check, Copy, Mark } from '../ui/icons.tsx'
 
 function defaultName(): string {
   const ua = navigator.userAgent
@@ -53,8 +53,9 @@ function Claim({ initial }: { initial?: string }) {
     }
   }
   return (
-    <div class="page">
-      <h1 class="hero-title">{initial ? 'Pair this phone' : 'Connect to your agents'}</h1>
+    <div class="onboard">
+      <Mark size={72} />
+      <h1 class="title-xl">{initial ? 'Pair this phone' : 'Connect to your agents'}</h1>
       <p class="lede">
         {initial ? (
           `Your computer created a one-time code for ${location.host}. Pairing gives this phone the key to read your agents’ activity and answer them.`
@@ -71,6 +72,7 @@ function Claim({ initial }: { initial?: string }) {
             <label for="code">Pairing code</label>
             <input
               id="code"
+              class="mono"
               autoComplete="off"
               autoCapitalize="off"
               spellcheck={false}
@@ -89,12 +91,12 @@ function Claim({ initial }: { initial?: string }) {
             {error}
           </p>
         )}
-        <button type="submit" class="btn primary block" disabled={busy || !code.trim()}>
+        <button type="submit" class="btn primary wide" disabled={busy || !code.trim()}>
           {busy ? <span class="spinner" aria-hidden="true" /> : <Check />}
           {busy ? 'Pairing…' : 'Pair'}
         </button>
       </form>
-      <p class="fine">
+      <p class="fine center">
         The code works once and expires after 10 minutes. Your relay never sees the key, only the encrypted data.
       </p>
     </div>
@@ -104,8 +106,9 @@ function Claim({ initial }: { initial?: string }) {
 function InstallFirst({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div class="page">
-      <h1 class="hero-title">Add AgentWatch to your Home Screen first</h1>
+    <div class="onboard">
+      <Mark size={72} />
+      <h1 class="title-xl">Add AgentWatch to your Home Screen first</h1>
       <p class="lede">
         iPhone only sends notifications to apps on the Home Screen, and that app keeps its own storage.
       </p>
@@ -113,11 +116,11 @@ function InstallFirst({ code }: { code: string }) {
         <li>
           <span>
             Copy this pairing code. It works once, for 10 minutes.
-            <span class="code-box" style={{ marginTop: 8, marginBottom: 0 }}>
-              <span>{code}</span>
+            <span class="code-box">
+              <span class="mono">{code}</span>
               <button
                 type="button"
-                class="btn quiet"
+                class="btn quiet small"
                 onClick={async () => {
                   await navigator.clipboard.writeText(code).catch(() => {})
                   setCopied(true)
@@ -168,10 +171,11 @@ function Notifications({ app, go }: { app: AppState; go: (hash: string) => void 
     }
   }
   return (
-    <div class="page">
-      <h1 class="hero-title">
-        <Check /> Paired
-      </h1>
+    <div class="onboard">
+      <span class="done-badge" aria-hidden="true">
+        <Check />
+      </span>
+      <h1 class="title-xl">Paired</h1>
       {support === 'ok' ? (
         <>
           <p class="lede">
@@ -184,13 +188,13 @@ function Notifications({ app, go }: { app: AppState; go: (hash: string) => void 
             </p>
           )}
           {step === 'ask' && (
-            <button type="button" class="btn primary block" disabled={busy} onClick={enable}>
+            <button type="button" class="btn primary wide" disabled={busy} onClick={enable}>
               {busy && <span class="spinner" aria-hidden="true" />}
               Turn on notifications
             </button>
           )}
           {step === 'enabled' && (
-            <button type="button" class="btn primary block" disabled={busy} onClick={test}>
+            <button type="button" class="btn primary wide" disabled={busy} onClick={test}>
               {busy && <span class="spinner" aria-hidden="true" />}
               Send a test notification
             </button>
@@ -204,7 +208,7 @@ function Notifications({ app, go }: { app: AppState; go: (hash: string) => void 
             : 'This browser can’t receive push notifications. The app still works. Open it to check on your agents.'}
         </p>
       )}
-      <button type="button" class="btn quiet block" style={{ marginTop: 12 }} onClick={() => go('#/')}>
+      <button type="button" class="btn ghost wide" onClick={() => go('#/')}>
         {step === 'ask' && support === 'ok' ? 'Skip for now' : 'Go to inbox'}
       </button>
     </div>
@@ -214,13 +218,14 @@ function Notifications({ app, go }: { app: AppState; go: (hash: string) => void 
 /** A `#/join/…` invite is for a computer (`agentwatch join`), not a phone. Say so instead of a confusing pair form. */
 export function JoinOnPhone() {
   return (
-    <div class="page">
-      <h1 class="hero-title">This invite is for a computer</h1>
+    <div class="onboard">
+      <Mark size={72} />
+      <h1 class="title-xl">This invite is for a computer</h1>
       <p class="lede">
         It adds another computer or OS user to your relay. On that computer, run <code>agentwatch join</code> and paste
         the whole link when it asks.
       </p>
-      <p class="fine">
+      <p class="fine center">
         To pair a phone instead, run <code>agentwatch pair</code> on a computer that is already set up.
       </p>
     </div>

@@ -1,20 +1,24 @@
-// Inbox: the rail of requests on top, then every session grouped by machine and OS user.
+// Inbox: one line that says whether anything waits on you, the requests themselves, then every session grouped by
+// machine and OS user.
 
 import type { SourceView } from '@agentwatch/protocol'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { api } from '../lib/api.ts'
+import { plainText } from '../lib/markdown.ts'
 import {
   agentLabel,
   type Model,
   projectName,
+  type RequestVM,
   type SessionVM,
   STATE_LABEL,
   sessionKey,
   sourceLabel,
 } from '../lib/model.ts'
 import { type AppState, refresh, setMuteLocal } from '../lib/store.ts'
-import { ago, clock } from '../lib/time.ts'
-import { BellOff, Check, Gear, Offline } from '../ui/icons.tsx'
+import { ago, clock, duration } from '../lib/time.ts'
+import { TopBar } from '../ui/bar.tsx'
+import { BellOff, Chevron, Gear, Laptop, Mark, Offline } from '../ui/icons.tsx'
 import { Ticket } from '../ui/ticket.tsx'
 
 const STATE_ORDER: Record<string, number> = { needs_you: 0, working: 1, idle: 2, unknown: 3, ended: 4 }
@@ -25,20 +29,24 @@ export function Inbox({ app, now, go }: { app: AppState; now: number; go: (hash:
   const total = model?.sources.length ?? 0
   return (
     <>
-      <header class="topbar">
-        <h1>
-          <span class="title-text">AgentWatch</span>
-        </h1>
+      <TopBar
+        title={
+          <span class="brand">
+            <Mark size={26} />
+            AgentWatch
+          </span>
+        }
+      >
         {model && total > 0 && (
-          <button type="button" class="machines" onClick={() => go('#/settings')} aria-label="Machines">
-            <span class={`dot ${online === 0 ? 'off' : ''}`} />
+          <button type="button" class="pill" onClick={() => go('#/settings')} aria-label="Computers">
+            <span class={`dot ${online === 0 ? 'off' : online < total ? 'part' : ''}`} />
             {online === total ? `${total} online` : `${online} of ${total} online`}
           </button>
         )}
         <button type="button" class="icon-btn" onClick={() => go('#/settings')} aria-label="Settings">
           <Gear />
         </button>
-      </header>
+      </TopBar>
       <Banners app={app} now={now} />
       {!model ? <Loading /> : <Board model={model} app={app} now={now} go={go} />}
     </>
@@ -56,7 +64,7 @@ function Banners({ app, now }: { app: AppState; now: number }) {
             {app.error}
             {app.lastSync ? ` Showing what was known ${ago(app.lastSync, now)} ago.` : ''}
           </p>
-          <button type="button" onClick={() => void refresh()}>
+          <button type="button" class="btn quiet small" onClick={() => void refresh()}>
             Retry
           </button>
         </div>
@@ -67,6 +75,7 @@ function Banners({ app, now }: { app: AppState; now: number }) {
           <p>Notifications muted until {clock(mute)}.</p>
           <button
             type="button"
+            class="btn quiet small"
             onClick={async () => {
               setMuteLocal(null)
               if (app.creds) await api(app.creds.token, 'POST', '/api/mute', { until: null }).catch(() => {})
@@ -83,7 +92,8 @@ function Banners({ app, now }: { app: AppState; now: number }) {
 
 function Loading() {
   return (
-    <div role="status" aria-busy="true" aria-label="Loading" style={{ marginTop: 24 }}>
+    <div class="loading" role="status" aria-busy="true" aria-label="Loading">
+      <div class="skeleton hero-skel" />
       <div class="skeleton" />
       <div class="skeleton" />
       <div class="skeleton" />
@@ -91,19 +101,48 @@ function Loading() {
   )
 }
 
+/** The one-line answer to "does anything need me?", and what everything else is doing. */
+function Status({ model, open, now }: { model: Model; open: RequestVM[]; now: number }) {
+  const live = model.sessions.filter((s) => s.state !== 'ended')
+  const count = (st: string) => live.filter((s) => s.state === st).length
+  const parts = [count('working') && `${count('working')} working`, count('idle') && `${count('idle')} idle`].filter(
+    Boolean,
+  ) as string[]
+  let title: string
+  let sub: string
+  if (open.length) {
+    const sessions = new Set(open.map((r) => sessionKey(r.sourceId, r.sessionId)))
+    const first = model.sessions.find((s) => sessionKey(s.sourceId, s.id) === [...sessions][0])
+    title =
+      sessions.size === 1 ? `${agentLabel(first?.agent ?? 'claude')} needs you` : `${sessions.size} agents need you`
+    sub = [`Waiting ${duration(now - open[0]!.createdAt)}`, ...parts].join(' · ')
+  } else {
+    title = 'All clear'
+    sub = parts.length ? `Nothing waiting on you · ${parts.join(' · ')}` : 'Nothing waiting on you · no agents running'
+  }
+  return (
+    <section class="status" aria-live="polite">
+      <h1>{title}</h1>
+      <p>{sub}</p>
+    </section>
+  )
+}
+
 function Board({ model, app, now, go }: { model: Model; app: AppState; now: number; go: (hash: string) => void }) {
   const open = model.requests.filter((r) => r.status === 'open' || app.pending[r.id])
   const sessions = new Map(model.sessions.map((s) => [sessionKey(s.sourceId, s.id), s]))
   const sources = new Map(model.sources.map((s) => [s.id, s]))
-  // Oldest wait first: the hottest ticket sits at the front of the rail.
+  const t = now + model.skew
+  // Longest wait first.
   open.sort((a, b) => a.createdAt - b.createdAt)
 
   if (!model.sources.length) {
     return (
       <div class="empty">
-        <h2>No computers connected yet</h2>
+        <Mark size={64} />
+        <h1>No computers connected yet</h1>
         <p>
-          On your computer, run <code>agentwatch setup</code>. Your agents will show up here as soon as they start.
+          On your computer, run <code>agentwatch setup</code>. Your agents show up here as soon as they start.
         </p>
       </div>
     )
@@ -111,74 +150,30 @@ function Board({ model, app, now, go }: { model: Model; app: AppState; now: numb
 
   return (
     <>
-      <section class="rail-section" aria-labelledby="rail-h">
-        {open.length === 0 ? (
-          <h2 id="rail-h" class="rail-empty">
-            <Check />
-            Nothing waiting on you
-          </h2>
-        ) : (
-          <div class="section-head">
-            <h2 id="rail-h">
-              Waiting on you
-              <span class="count">{open.length}</span>
-            </h2>
-          </div>
-        )}
-        {open.length > 0 && (
-          <Rail count={open.length}>
-            {open.map((r) => (
-              <Ticket
-                key={r.id}
-                req={r}
-                session={sessions.get(sessionKey(r.sourceId, r.sessionId))}
-                source={sources.get(r.sourceId)}
-                now={now + model.skew}
-                pending={app.pending[r.id]}
-              />
-            ))}
-          </Rail>
-        )}
-      </section>
+      <Status model={model} open={open} now={t} />
+      {open.length > 0 && (
+        <section class="stack" aria-label="Waiting on you">
+          {open.map((r) => (
+            <Ticket
+              key={r.id}
+              req={r}
+              session={sessions.get(sessionKey(r.sourceId, r.sessionId))}
+              source={sources.get(r.sourceId)}
+              now={t}
+              pending={app.pending[r.id]}
+            />
+          ))}
+        </section>
+      )}
       {model.sources.map((src) => (
         <SourceGroup
           key={src.id}
           source={src}
           sessions={model.sessions.filter((s) => s.sourceId === src.id)}
-          now={now + model.skew}
+          now={t}
           go={go}
         />
       ))}
-    </>
-  )
-}
-
-function Rail({ count, children }: { count: number; children: preact.ComponentChildren }) {
-  const ref = useRef<HTMLElement>(null)
-  const [index, setIndex] = useState(0)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const onScroll = () => {
-      const w = el.firstElementChild?.getBoundingClientRect().width ?? el.clientWidth
-      setIndex(Math.round(el.scrollLeft / (w + 12)))
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [])
-  return (
-    <>
-      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a horizontally scrolling region must be keyboard-focusable */}
-      <section ref={ref} class={`rail ${count > 1 ? 'many' : ''}`} tabIndex={0} aria-label="Requests">
-        {children}
-      </section>
-      {count > 1 && (
-        <div class="rail-dots" aria-hidden="true">
-          {Array.from({ length: count }, (_, i) => (
-            <span key={i} aria-current={i === Math.min(index, count - 1)} />
-          ))}
-        </div>
-      )}
     </>
   )
 }
@@ -200,22 +195,19 @@ function SourceGroup({
     .sort((a, b) => (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || b.stateSince - a.stateSince)
   const ended = sessions.filter((s) => s.state === 'ended').sort((a, b) => b.stateSince - a.stateSince)
   return (
-    <section aria-label={sourceLabel(source)} class={source.online ? undefined : 'stale'}>
-      <div class="group-head">
-        <span class={`dot ${source.online ? '' : 'off'}`} />
+    <section aria-label={sourceLabel(source)} class={`group ${source.online ? '' : 'stale'}`}>
+      <h2 class="group-head">
+        <Laptop />
         <span class="who">{sourceLabel(source)}</span>
-        <span class="meta">
-          {source.online ? 'online' : `offline · ${ago(source.lastSeen, now)}`}
-          {source.privacy === 'summary' ? ' · summary' : ''}
+        <span class="group-meta">
+          <span class={`dot ${source.online ? '' : 'off'}`} />
+          {source.online ? 'Online' : `Offline ${ago(source.lastSeen, now)}`}
+          {source.privacy === 'summary' ? ' · Summary' : ''}
         </span>
-      </div>
-      {!source.online && live.length > 0 && <p class="stale-note">Showing what it last reported.</p>}
-      <ul class="rows">
-        {live.length === 0 && (
-          <li class="more" style={{ cursor: 'default', display: 'flex', alignItems: 'center' }}>
-            No running sessions.
-          </li>
-        )}
+      </h2>
+      {!source.online && live.length > 0 && <p class="group-note">Showing what it last reported.</p>}
+      <ul class="list">
+        {live.length === 0 && <li class="list-empty">No running sessions</li>}
         {live.map((s) => (
           <Row key={s.key} s={s} now={now} go={go} />
         ))}
@@ -224,8 +216,8 @@ function SourceGroup({
             ended.map((s) => <Row key={s.key} s={s} now={now} go={go} />)
           ) : (
             <li>
-              <button type="button" class="more" onClick={() => setShowEnded(true)}>
-                {ended.length} ended
+              <button type="button" class="row more" onClick={() => setShowEnded(true)}>
+                Show {ended.length} ended {ended.length === 1 ? 'session' : 'sessions'}
               </button>
             </li>
           ))}
@@ -235,25 +227,37 @@ function SourceGroup({
 }
 
 function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => void }) {
+  const text = s.info?.snippet
+    ? plainText(s.info.snippet)
+    : s.info?.title && s.info.title !== s.info.project
+      ? s.info.title
+      : ''
   return (
     <li>
       <button
         type="button"
-        class={`row ${s.state}`}
+        class="row"
+        data-state={s.state}
         onClick={() => go(`#/s/${encodeURIComponent(s.sourceId)}/${encodeURIComponent(s.id)}`)}
       >
-        <span class={`state ${s.state}`}>{STATE_LABEL[s.state]}</span>
+        <span class="orb" data-state={s.state} aria-hidden="true" />
         <span class="row-main">
-          <span class="row-title">{s.info ? projectName(s) : 'Unreadable session'}</span>
-          {s.info?.snippet && <span class="row-snippet">{s.info.snippet}</span>}
-          {!s.info?.snippet && s.info?.title && s.info.title !== s.info.project && (
-            <span class="row-snippet">{s.info.title}</span>
-          )}
+          <span class="row-top">
+            <span class="row-title">{s.info ? projectName(s) : 'Unreadable session'}</span>
+            <span class="row-meta">
+              {agentLabel(s.agent)}
+              <span class="sep" aria-hidden="true" />
+              <span class="num">{ago(s.stateSince, now)}</span>
+            </span>
+          </span>
+          <span class="row-sub">
+            <span class="state-word" data-state={s.state}>
+              {STATE_LABEL[s.state]}
+            </span>
+            {text && <span class="row-snippet"> {text}</span>}
+          </span>
         </span>
-        <span class="row-side">
-          {agentLabel(s.agent)}
-          <span class="age">{ago(s.stateSince, now)}</span>
-        </span>
+        <Chevron />
       </button>
     </li>
   )

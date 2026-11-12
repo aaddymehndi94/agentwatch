@@ -1,20 +1,23 @@
-// A request ticket: what the agent wants, the literal proof, how long it has waited, and the decision.
+// A request card: what the agent wants, the literal proof, how long it has waited, and the decision. Its edge is a
+// slow-turning light whose colour heats from amber to red as the wait grows.
 
 import type { SourceView } from '@agentwatch/protocol'
 import { useState } from 'preact/hooks'
 import { agentLabel, projectName, type RequestVM, type SessionVM, sourceLabel } from '../lib/model.ts'
 import { clearPending, type Pending, sendCommand } from '../lib/store.ts'
-import { clock, duration, heat } from '../lib/time.ts'
-import { Alert, Check, Cross, Offline } from './icons.tsx'
+import { duration, heat } from '../lib/time.ts'
+import { Alert, Check, Clock, Cross, FileEdit, Offline, Question, Terminal } from './icons.tsx'
+import { InlineMarkdown } from './markdown.tsx'
+
+const EDIT_TOOLS = /^(Edit|MultiEdit|Write|NotebookEdit|apply_patch)$/
 
 function heatStyle(h: number): Record<string, string> {
-  // neutral → amber over the first half of the log scale, amber → red over the second.
+  // amber → orange over the first half of the log scale, orange → red over the second.
   const color =
     h < 0.5
       ? `color-mix(in oklab, var(--heat-1) ${Math.round(h * 200)}%, var(--heat-0))`
       : `color-mix(in oklab, var(--heat-2) ${Math.round((h - 0.5) * 200)}%, var(--heat-1))`
-  const text = h < 0.35 ? 'var(--ink)' : h < 0.7 ? 'var(--amber-ink)' : 'var(--red-ink)'
-  return { '--h': h.toFixed(3), '--heat': color, '--heat-text': text }
+  return { '--h': h.toFixed(3), '--heat': color }
 }
 
 export function Ticket(props: {
@@ -30,28 +33,38 @@ export function Ticket(props: {
   const isQuestion = req.kind === 'question'
   const who = agentLabel(session?.agent ?? 'claude')
   const kindLabel = isQuestion ? `${who} has a question` : `${who} needs approval`
+  const tool = req.info?.tool
+  const hot = heat(waited)
 
   return (
-    <article class="ticket" style={heatStyle(heat(waited))} aria-label={`${kindLabel}, waiting ${duration(waited)}`}>
-      <header class="ticket-head">
-        <span class="ticket-kind">{kindLabel}</span>
-        <span class="ticket-timer" title="Waiting for">
+    <article
+      class={`req ${pending ? 'settling' : ''}`}
+      data-heat={hot < 0.35 ? 0 : hot < 0.7 ? 1 : 2}
+      style={heatStyle(hot)}
+      aria-label={`${kindLabel}, waiting ${duration(waited)}`}
+    >
+      <header class="req-head">
+        <span class="req-icon" aria-hidden="true">
+          {isQuestion ? <Question /> : tool && EDIT_TOOLS.test(tool) ? <FileEdit /> : <Terminal />}
+        </span>
+        <span class="req-title">
+          <span class="req-kind">{kindLabel}</span>
+          {props.showWhere !== false && (
+            <span class="req-where">
+              {session ? projectName(session) : 'Session'}
+              <span class="sep" aria-hidden="true" />
+              <span class="mono">{sourceLabel(source)}</span>
+            </span>
+          )}
+        </span>
+        <span class="req-timer" title="Waiting for">
+          <Clock />
           {duration(waited)}
         </span>
       </header>
-      <div class="timer-track" aria-hidden="true">
-        <div class="timer-fill" />
-      </div>
-      <p class="ticket-where">
-        {props.showWhere !== false && <strong>{session ? projectName(session) : 'Session'}</strong>}
-        {props.showWhere !== false && `${sourceLabel(source)} · `}
-        <span class="ticket-no">
-          #{req.seq} · {clock(req.createdAt)}
-        </span>
-      </p>
       <Body {...props} />
       {source && !source.online && req.status === 'open' && !pending && (
-        <div class="ticket-status">
+        <div class="note">
           <Offline />
           <p>
             {sourceLabel(source)} is offline. An answer reaches it only if it reconnects within 5 minutes; until then,
@@ -64,8 +77,8 @@ export function Ticket(props: {
   )
 }
 
-/** Literal text (a command, a path) that wraps only between tokens, so `--env` never splits into `-` / `-env`. Copying
- * it gives back exactly the original. Tokens too long for a line still break anywhere. */
+/** Literal text (a command, a path) that wraps only between tokens, so `--env` never splits into `-` / `-env`. Tokens
+ * too long for a line still break anywhere. */
 function Literal({ text }: { text: string }) {
   return (
     <>
@@ -82,27 +95,48 @@ function Literal({ text }: { text: string }) {
   )
 }
 
+/** The exact command or change, one line per row; an edit's removed and added lines are tinted. */
+function Proof({ tool, detail }: { tool: string | undefined; detail: string }) {
+  const edit = !!tool && EDIT_TOOLS.test(tool)
+  const lines = detail.split('\n')
+  return (
+    <figure class="proof">
+      <figcaption>{tool ?? 'Details'}</figcaption>
+      <pre>
+        {lines.map((l, i) => (
+          <span
+            key={i}
+            class={`ln ${edit && i > 0 && l.startsWith('+') ? 'add' : edit && i > 0 && l.startsWith('-') ? 'del' : ''}`}
+          >
+            <Literal text={l} />
+          </span>
+        ))}
+      </pre>
+    </figure>
+  )
+}
+
 function Body({ req }: { req: RequestVM }) {
   const info = req.info
-  if (!info) return <p class="hidden-note">This request couldn’t be decrypted on this phone.</p>
+  if (!info) return <p class="muted-note">This request couldn’t be decrypted on this phone.</p>
   // Agents with a tool (Claude, Codex) put it in `tool` and the literal in `detail`. A script's `agentwatch ask`
   // puts its own question in `title`.
-  const asked = !info.tool && req.kind === 'permission' ? <p class="question">{info.title}</p> : null
-  const detail = info.detail ? (
-    <pre class="proof">
-      <span class="proof-label">{info.tool ?? 'Details'}</span>
-      <Literal text={info.detail} />
-    </pre>
-  ) : null
+  const asked =
+    !info.tool && req.kind === 'permission' ? (
+      <p class="question">
+        <InlineMarkdown text={info.title} />
+      </p>
+    ) : null
+  const detail = info.detail ? <Proof tool={info.tool} detail={info.detail} /> : null
   if (req.kind === 'question') {
     if (!info.questions?.length) {
-      return <p class="hidden-note">Details stay on the computer (summary privacy). Answer it there.</p>
+      return <p class="muted-note">Details stay on the computer (summary privacy). Answer it there.</p>
     }
     return detail // the question itself is rendered by the footer, which owns the selection
   }
   if (!detail && !asked) {
     return (
-      <p class="hidden-note">
+      <p class="muted-note">
         Wants to use <strong>{info.tool ?? 'a tool'}</strong>. Details stay on the computer (summary privacy).
       </p>
     )
@@ -120,7 +154,7 @@ function Footer({ req, session, pending }: { req: RequestVM; session: SessionVM 
   // A request this phone can't open is one it can't vouch for, so it gets no buttons.
   if (!req.answerable || !req.info) {
     return (
-      <div class="ticket-status">
+      <div class="note">
         <Alert />
         <p>Answer this one at the computer.</p>
       </div>
@@ -139,7 +173,7 @@ function Footer({ req, session, pending }: { req: RequestVM; session: SessionVM 
     })
   return (
     <div class="actions">
-      <button type="button" class="btn" onClick={() => decide('deny')}>
+      <button type="button" class="btn ghost" onClick={() => decide('deny')}>
         <Cross />
         Deny
       </button>
@@ -175,8 +209,11 @@ function Answer({ req }: { req: RequestVM; session: SessionVM | undefined }) {
   return (
     <>
       {questions.map((q) => (
-        <fieldset key={q.question} style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend class="question">{q.question}</legend>
+        <fieldset key={q.question} class="ask">
+          <legend class="question">
+            <InlineMarkdown text={q.question} />
+          </legend>
+          {q.multiSelect && <p class="ask-hint">Choose any that apply</p>}
           <div class="options" role={q.multiSelect ? 'group' : 'radiogroup'}>
             {q.options.map((o) => {
               const on = picked[q.question]?.includes(o.label) ?? false
@@ -190,10 +227,18 @@ function Answer({ req }: { req: RequestVM; session: SessionVM | undefined }) {
                   aria-checked={on}
                   onClick={() => toggle(q.question, o.label, q.multiSelect)}
                 >
-                  <span class="mark">{on && <Check />}</span>
-                  <span>
-                    <span class="option-label">{o.label}</span>
-                    {o.description && <span class="option-desc">{o.description}</span>}
+                  <span class="tick" aria-hidden="true">
+                    {on && <Check />}
+                  </span>
+                  <span class="option-text">
+                    <span class="option-label">
+                      <InlineMarkdown text={o.label} />
+                    </span>
+                    {o.description && (
+                      <span class="option-desc">
+                        <InlineMarkdown text={o.description} />
+                      </span>
+                    )}
                   </span>
                 </button>
               )
@@ -201,10 +246,12 @@ function Answer({ req }: { req: RequestVM; session: SessionVM | undefined }) {
           </div>
         </fieldset>
       ))}
-      <button type="button" class="btn primary block" disabled={!complete} onClick={send}>
-        <Check />
-        Send answer
-      </button>
+      <div class="actions">
+        <button type="button" class="btn primary wide" disabled={!complete} onClick={send}>
+          <Check />
+          {complete ? 'Send answer' : questions.length > 1 ? 'Answer every question' : 'Pick an answer'}
+        </button>
+      </div>
     </>
   )
 }
@@ -212,28 +259,28 @@ function Answer({ req }: { req: RequestVM; session: SessionVM | undefined }) {
 function PendingStatus({ id, pending }: { id: string; pending: Pending }) {
   if (pending.status === 'sending' || pending.status === 'sent') {
     return (
-      <div class="ticket-status" role="status">
+      <div class="note live" role="status">
         <span class="spinner" aria-hidden="true" />
-        {pending.status === 'sending' ? 'Sending…' : `${pending.label}. Waiting for your computer…`}
+        <p>{pending.status === 'sending' ? 'Sending…' : `${pending.label}. Waiting for your computer…`}</p>
       </div>
     )
   }
   if (pending.status === 'applied') {
     return (
-      <div class="ticket-status" role="status">
+      <div class="note ok" role="status">
         <Check />
-        {pending.label}
+        <p>{pending.label}</p>
       </div>
     )
   }
   return (
-    <div class="ticket-status bad" role="alert">
+    <div class="note bad" role="alert">
       <Alert />
-      <div>
-        {pending.status === 'rejected' ? 'Not applied' : 'Couldn’t send'}
-        {pending.detail && <p>{pending.detail}</p>}
-      </div>
-      <button type="button" class="btn quiet" style={{ marginLeft: 'auto' }} onClick={() => clearPending(id)}>
+      <p>
+        <strong>{pending.status === 'rejected' ? 'Not applied' : 'Couldn’t send'}</strong>
+        {pending.detail && <span class="note-detail">{pending.detail}</span>}
+      </p>
+      <button type="button" class="btn quiet small" onClick={() => clearPending(id)}>
         OK
       </button>
     </div>

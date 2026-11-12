@@ -36,8 +36,7 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
     sess('laptop-a', 's4', 'claude', 'idle', now - 23 * min, {
       project: 'agentwatch',
       title: 'Write the README',
-      snippet:
-        'Done. The README now covers deploy, setup, pairing and the security model, with a troubleshooting section.',
+      snippet: README_DONE,
     }),
     sess('laptop-b', 's5', 'claude', 'working', now - 2 * min, { project: 'payments-core' }),
     sess('laptop-b', 's6', 'claude', 'idle', now - 3 * 3600_000, { project: 'infra' }),
@@ -99,7 +98,45 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
   return { serverTime: now, skew: 0, mute: null, sources, sessions, requests }
 }
 
-export function demoEvents(now = Date.now()): EventVM[] {
+const README_DONE = `Done. The README now covers the whole path from zero to a paired phone.
+
+## What changed
+- **Deploy:** \`agentwatch relay deploy\` creates the Worker and claims it in one step
+- **Setup:** per-user install, with the systemd service where it's available
+- **Pairing:** QR code, plus the iPhone *Add to Home Screen* flow
+- **Security model:** what the relay can and can't see
+
+| Section | Lines |
+|:--------|------:|
+| Deploy | 64 |
+| Troubleshooting | 41 |
+
+Try it locally:
+
+\`\`\`sh
+pnpm install && pnpm build
+node packages/cli/dist/agentwatch.mjs doctor --test-push
+\`\`\`
+
+> The Deploy-to-Cloudflare button is left out until the repo is public.`
+
+export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
+  if (sessionId === 's4') {
+    return [
+      { at: now - 23 * min, kind: 'done', text: README_DONE },
+      {
+        at: now - 31 * min,
+        kind: 'prompted',
+        text: 'Rewrite the README so someone new can deploy, set up and pair a phone without asking me anything.',
+      },
+      {
+        at: now - 52 * min,
+        kind: 'done',
+        text: 'Read through `docs/` and the CLI help. Two commands were undocumented: `rotate` and `invite`.',
+      },
+      { at: now - 55 * min, kind: 'prompted', text: 'Start by reading the docs folder and listing what is missing.' },
+    ]
+  }
   return [
     { at: now - 4 * min, kind: 'needs_you', text: 'pnpm --filter api-server db:migrate --env local' },
     { at: now - 9 * min, kind: 'answered', text: 'Approved from phone' },
@@ -107,9 +144,13 @@ export function demoEvents(now = Date.now()): EventVM[] {
     {
       at: now - 18 * min,
       kind: 'prompted',
-      text: 'Move the billing webhooks onto the job queue and keep retries idempotent.',
+      text: 'Move the billing webhooks onto the job queue and keep retries **idempotent**.',
     },
-    { at: now - 64 * min, kind: 'done', text: 'Added the queue consumer and a retry test.' },
+    {
+      at: now - 64 * min,
+      kind: 'done',
+      text: 'Added the queue consumer and a retry test:\n\n- `src/queue/consumer.ts`: pulls jobs in batches of 25\n- `test/retry.test.ts`: replays a webhook 3 times and expects one charge',
+    },
   ]
 }
 

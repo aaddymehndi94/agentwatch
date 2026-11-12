@@ -1,7 +1,8 @@
 // Hash router and the one-second clock that drives ticket timers.
 
+import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { useApp } from './lib/store.ts'
+import { type AppState, useApp } from './lib/store.ts'
 import { Inbox } from './screens/inbox.tsx'
 import { JoinOnPhone, PairScreen } from './screens/pair.tsx'
 import { SessionScreen } from './screens/session.tsx'
@@ -33,6 +34,25 @@ const go = (hash: string) => {
   scrollTo(0, 0)
 }
 
+/** The sky at the top of every screen: cool when nothing waits on you, warm when something does. */
+function mood(app: AppState): 'calm' | 'waiting' | 'offline' | 'setup' {
+  if (!app.model) return app.error ? 'offline' : 'calm'
+  if (app.error) return 'offline'
+  if (app.model.requests.some((r) => r.status === 'open')) return 'waiting'
+  return 'calm'
+}
+
+function Shell({ app, children, view }: { app: AppState | null; children: ComponentChildren; view: string }) {
+  return (
+    <main class="app" data-mood={app ? mood(app) : 'setup'}>
+      <div class="sky" aria-hidden="true" />
+      <div class="view" key={view}>
+        {children}
+      </div>
+    </main>
+  )
+}
+
 export function App() {
   const app = useApp()
   const hash = useHash()
@@ -41,27 +61,27 @@ export function App() {
 
   if (hash.startsWith('#/join/')) {
     return (
-      <main class="app">
+      <Shell app={null} view="join">
         <JoinOnPhone />
-      </main>
+      </Shell>
     )
   }
   const pair = /^#\/pair(?:\/(.+))?$/.exec(hash)
   if (pair || (!app.creds && !app.demo) || app.revoked) {
     return (
-      <main class="app">
+      <Shell app={null} view="pair">
         {app.revoked && (
-          <div class="banner" role="alert">
+          <div class="banner bad" role="alert">
             <p>This phone was unpaired from your relay. Pair it again to continue.</p>
           </div>
         )}
         <PairScreen app={app} code={pair?.[1] ? decodeURIComponent(pair[1]) : undefined} go={go} />
-      </main>
+      </Shell>
     )
   }
   const session = /^#\/s\/([^/]+)\/([^/]+)$/.exec(hash)
   return (
-    <main class="app">
+    <Shell app={app} view={session ? hash : hash === '#/settings' ? 'settings' : 'inbox'}>
       {session ? (
         <SessionScreen
           app={app}
@@ -75,6 +95,6 @@ export function App() {
       ) : (
         <Inbox app={app} now={now} go={go} />
       )}
-    </main>
+    </Shell>
   )
 }

@@ -1,232 +1,319 @@
 ---
 name: AgentWatch
-description: A pager for your coding agents. Blocked work hangs on a rail; everything else stays quiet.
+description: A pager for your coding agents. One sentence says whether anything needs you; everything else reads like a modern chat.
 colors:
-  ground: "#dfe2e1"
-  ground-2: "#d2d6d5"
-  rail: "#b9bfbe"
-  paper: "#fbfbf8"
-  paper-2: "#f0f1ed"
-  ink: "#141517"
-  ink-2: "#464a4f"
-  ink-3: "#676c72"
-  rule: "#c3c8c7"
-  rule-paper: "#e2e3de"
-  printer-red: "#c0112d"
-  printer-red-ink: "#a50e26"
-  amber-ink: "#8a5200"
-  ok-ink: "#1b6542"
-  heat-cold: "#9aa0a4"
-  heat-warm: "#d89512"
-  heat-hot: "#c0112d"
-  focus: "#1f5fd1"
-  kds-ground: "#0d0e0f"
-  kds-ground-2: "#141618"
-  kds-paper: "#1b1e21"
-  kds-paper-2: "#24282c"
-  kds-ink: "#ecebe6"
-  kds-ink-2: "#b4b8bb"
-  kds-ink-3: "#91969a"
-  kds-red: "#ff4d5e"
-  kds-amber-ink: "#f2ab48"
-  kds-ok-ink: "#5fcf95"
-  kds-focus: "#79a6ff"
+  ground: "#f2f3f7"
+  surface: "#ffffff"
+  surface-2: "#f4f5f9"
+  surface-3: "#e9ebf2"
+  code-ground: "#f6f7fa"
+  user-bubble: "#e2e6f3"
+  text: "#0a0c14"
+  text-2: "#4b5266"
+  text-3: "#646b7f"
+  live: "#0874b3"
+  idle: "#5b4ee6"
+  ok: "#067a52"
+  warm: "#b4410f"
+  bad: "#c4153b"
+  focus: "#2563eb"
+  night-ground: "#05060a"
+  night-surface: "#0d0f16"
+  night-surface-2: "#141722"
+  night-surface-3: "#1c202d"
+  night-code-ground: "#08090e"
+  night-user-bubble: "#1b2031"
+  night-text: "#f2f4f9"
+  night-text-2: "#a9b0c2"
+  night-text-3: "#7f879b"
+  night-live: "#5ad1ff"
+  night-idle: "#ab9fff"
+  night-ok: "#3fdc9a"
+  night-warm: "#ffa45c"
+  night-bad: "#ff6b81"
+  night-focus: "#7cc4ff"
+  brand-cyan: "#5ee7ff"
+  brand-violet: "#9b87ff"
+  heat-fresh: "#ffc23d"
+  heat-waiting: "#ff8a3d"
+  heat-overdue: "#ff4a6b"
 typography:
-  body:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "15px"
-    fontWeight: 400
-    lineHeight: 1.45
-  hero:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "26px"
-    fontWeight: 750
-    lineHeight: 1.15
-    letterSpacing: "-0.02em"
-  session-title:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "22px"
-    fontWeight: 700
-    lineHeight: 1.2
-    letterSpacing: "-0.01em"
+  status:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "36px"
+    fontWeight: 650
+    lineHeight: 1.05
+    letterSpacing: "-0.04em"
+  title:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "25px"
+    fontWeight: 650
+    lineHeight: 1.18
+    letterSpacing: "-0.03em"
   question:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "17px"
-    fontWeight: 600
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "17.5px"
+    fontWeight: 620
     lineHeight: 1.35
-  state-word:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "11.5px"
-    fontWeight: 700
-    letterSpacing: "0.04em"
-  literal:
-    fontFamily: "ui-monospace, SF Mono, Cascadia Mono, Roboto Mono, Menlo, Consolas, monospace"
-    fontSize: "13.5px"
+    letterSpacing: "-0.015em"
+  bar-title:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "17px"
+    fontWeight: 620
+    lineHeight: 1.25
+  row-title:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "15.5px"
+    fontWeight: 600
+  body:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "15px"
     fontWeight: 400
     lineHeight: 1.5
+  message:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "15.5px"
+    fontWeight: 400
+    lineHeight: 1.62
+  meta:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "12.5px"
+    fontWeight: 400
+  code:
+    fontFamily: "Geist Mono Variable, ui-monospace, SF Mono, Menlo, monospace"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.6
   timer:
-    fontFamily: "ui-monospace, SF Mono, Cascadia Mono, Roboto Mono, Menlo, Consolas, monospace"
-    fontSize: "15px"
+    fontFamily: "Geist Mono Variable, ui-monospace, SF Mono, Menlo, monospace"
+    fontSize: "13px"
     fontWeight: 600
 rounded:
-  ticket: "0 0 4px 4px"
-  control: "6px"
-  pill: "18px"
+  pill: "999px"
+  request: "26px"
+  list: "24px"
+  bubble: "22px"
+  field: "18px"
+  block: "16px"
+  tile: "12px"
+  code-inline: "6px"
 spacing:
   gutter: "16px"
-  tap: "48px"
-  rail-gap: "12px"
+  status-pad: "20px"
+  stack-gap: "14px"
+  thread-gap: "22px"
+  tap: "44px"
+  button: "52px"
 components:
   button-primary:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.control}"
-    height: "48px"
+    backgroundColor: "{colors.text}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.pill}"
+    height: "52px"
+    padding: "0 20px"
+  button-primary-night:
+    backgroundColor: "{colors.night-text}"
+    textColor: "{colors.night-ground}"
+    rounded: "{rounded.pill}"
+    height: "52px"
+  button-ghost:
+    backgroundColor: "{colors.surface-2}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.pill}"
+    height: "52px"
+    padding: "0 20px"
+  button-small:
+    backgroundColor: "{colors.surface-2}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.pill}"
+    height: "36px"
+    padding: "0 14px"
+  request-card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.request}"
+    padding: "16px"
+  session-list:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.list}"
+  user-bubble:
+    backgroundColor: "{colors.user-bubble}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.bubble}"
+    padding: "11px 16px"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.field}"
+    height: "54px"
     padding: "0 18px"
-  button-outline:
-    textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    height: "48px"
-    padding: "0 18px"
-  button-disabled:
-    textColor: "{colors.ink-3}"
-    rounded: "{rounded.control}"
-    height: "48px"
-  ticket:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.ticket}"
-    padding: "14px"
-  literal-block:
-    backgroundColor: "{colors.paper-2}"
-    textColor: "{colors.ink}"
-    typography: "{typography.literal}"
-    padding: "10px 12px"
+  code-block:
+    backgroundColor: "{colors.code-ground}"
+    textColor: "{colors.text}"
+    typography: "{typography.code}"
+    rounded: "{rounded.block}"
+    padding: "12px 14px"
 ---
 
 # Design System: AgentWatch
 
 ## Overview
 
-**Agents waiting on you are tickets on a kitchen pass, and the ticket's timer is the product.** The category default
-is a grey dashboard of equal session cards with coloured dots. AgentWatch refuses it: whatever is blocked on you hangs
-on a rail above everything else, and you can see it aging. The rest of the list stays quiet.
+**Creative North Star: "Night-sky glass"**
 
-The app is used in three moments (see `PRODUCT.md`): outside with the laptop at home, a glance after a buzz, and
-overnight checks in the dark. Mode: **Operate**. Phone first (390×844), one hand. Light and dark are both first-class,
-and the system setting picks between them.
+AgentWatch is checked in three moments (see `PRODUCT.md`): outside, a glance after a buzz, and overnight in the dark.
+The app answers one question first, "does anything need me?", in a single sentence at the top of the inbox. Blocked
+work sits directly under it, each request carrying its exact proof and its decision at thumb height. Everything else
+is a quiet, grouped list. A session reads like a modern chat: your prompts as bubbles, the agent's replies as rendered
+Markdown.
 
-- **Light: thermal ticket stock on a steel pass.** A cool grey-green ground, warm-white paper tickets, carbon-black
-  print, and the two-ply printer's red as the only loud colour.
-- **Dark: a kitchen display at night.** A near-black ground, charcoal tickets, paper-coloured ink. Ticket headers heat
-  from neutral to amber to red as the wait grows.
+The craft bar is current premium software: Linear, Raycast, iOS system apps. The look is dark-first, a near-black
+blue ground under a soft light at the top of the screen, with frosted chrome, generous radii, Geist type and an
+inverted pill as the one primary action. Light mode is a full twin, not an afterthought. Mode: **Operate**, phone
+first (390×844), one hand.
+
+**Key Characteristics:**
+- One status sentence answers the glance; the sky behind it changes temperature with it.
+- Waiting requests have a live edge that heats from amber to red as the wait grows.
+- State is carried by a word, an orb shape and a colour, never colour alone.
+- Agent text is rendered Markdown with highlighted code, never raw text.
+- Every control is a standard one: buttons, lists, segmented controls, a text field.
 
 ## Colors
 
-The tokens live in `packages/app/src/styles.css` as CSS custom properties. The dark set (`kds-*` above) replaces the
-light one under `prefers-color-scheme: dark`, or when Settings → Appearance says Dark.
+Tokens live in `packages/app/src/styles.css` as custom properties that use `light-dark()`, so one declaration covers
+both themes and Settings → Appearance can force either one. The `night-*` tokens above are the dark halves.
 
 ### Primary
-- **Ink** (`--ink`) is print: text, the primary button's fill, the outline of an active button.
-- **Paper** (`--paper`, `--paper-2`) is a ticket and the literal block inside it.
+- **Text** (`--text`) and its inverse make the primary button: ink on light, near-white on dark. The primary action
+  is an inverted pill, not a brand colour.
+- **Brand cyan → violet** (`--brand-a`, `--brand-b`) appears only in the mark, the agent avatar and the calm sky. It
+  is never used for text and never for state.
 
-### Heat (the only colour with meaning)
-- **Printer red** (`--red`, `--red-ink`) means one thing: an agent has been waiting on you. It's used for the "Needs
-  you" state word, the waiting count, and the hot end of the timer.
-- **Heat** (`--heat-0` → `--heat-1` → `--heat-2`): the timer bar's fill and the timer digits, mixed in OKLab along a
-  log scale of time waited. Under a minute is neutral, a few minutes is amber, and half an hour or more is red.
-- **OK ink** (`--ok-ink`) marks "online" and "working", and the check in "Nothing waiting on you".
+### State
+- **Warm** (`--warm`, plus the heat ramp `--heat-0/1/2`) means one thing: something is waiting on you. It's used on
+  the "Needs you" state word, the request icon tile, the timer pill, the live edge and the warm sky. Its text tones
+  (`--warm-0/1/2`) pass 4.5:1 in both themes.
+- **Live** (`--live`) is working. **Idle** (`--idle`) is finished and waiting for your next prompt. **OK** (`--ok`)
+  is online, applied and approved. **Bad** (`--bad`) is an error, a rejection, or a destructive action such as
+  Unpair.
 
 ### Neutral
-- `--ground` / `--ground-2` sit behind everything; the rail's band is `--ground-2`, with a 3px `--rail` edge on top.
-- `--ink-2` is secondary text and `--ink-3` is tertiary. Both pass 4.5:1 on ground and on paper in both themes.
-- `--rule` separates rows on the ground, and `--rule-paper` separates rows on paper.
+- `--bg` sits behind everything. `--surface` is lists, cards and the composer. `--surface-2/3` are option rows,
+  pressed states and the segmented thumb. `--code-bg` is behind every code or proof block.
+- `--text-2` is secondary and `--text-3` tertiary; both pass 4.5:1 on ground and surface in both themes.
+- `--line` and `--line-2` are hairlines. `--line-2` is for anything interactive (outlined buttons, inputs, option
+  rows).
 
-### Named rules
-- **Red is earned.** Nothing decorative is red. If everything is calm, the screen has no red at all.
-- **Never colour alone.** Every state has a word (NEEDS YOU, WORKING, IDLE, ENDED) and every decision has an icon and a
-  label (✓ Approve, ✕ Deny). Online and offline show as a filled dot versus a ring.
+### Named Rules
+**The Warm-Is-Earned Rule.** Nothing decorative is warm. When nothing waits on you, the screen has no orange or red,
+and the sky is cool.
+
+**The Never-Colour-Alone Rule.** Every state has a word (Needs you, Working, Idle, Ended) and an orb behaviour:
+ping, orbiting arc, still, hollow. Every decision has an icon and a label (✓ Approve, ✕ Deny). Online and offline are
+a filled dot versus a ring.
 
 ## Typography
 
-There is one workhorse sans: the platform's own (`system-ui`). It loads instantly offline, reads natively on iOS and
-Android, and the app has no display voice to carry. Monospace is reserved for real data: commands and paths in the
-literal block, ticket timers, ticket numbers and clock times, and `user@host` names. All numerals are tabular.
+**Sans:** Geist (variable, self-hosted through `@fontsource-variable/geist`; the CSP allows no font hosts).
+**Mono:** Geist Mono, reserved for real data: commands, paths, code, timers, ages and `user@host`.
 
 ### Hierarchy
-- Hero (26/750) appears on the pairing screens only.
-- Session title (22/700) and question (17/600) wrap with `text-wrap: balance`.
-- Body is 15/400. Row titles are 15/650, and snippets are 14 in `--ink-2`, clamped to two lines.
-- State words are 11.5/700, uppercase, tracked 0.04em, in a fixed 76px column so rows scan down one edge.
+- **Status** (36/650, -0.04em) is the inbox sentence, and the only display size.
+- **Title** (25/650) is a session's first prompt. **Onboarding titles** are 31/650.
+- **Question** (17.5/620) appears in request cards. **Bar title** is 17/620.
+- **Row title** (15.5/600) sits over a 13.5 preview in `--text-2`, clamped to two lines, with the state word leading
+  in its colour.
+- **Message** (15.5/1.62) is agent Markdown. Headings inside it stay small (1.28em, 1.14em, 1em) so a reply never
+  shouts over the app.
+- Numerals are tabular wherever they count (timers, ages, tables).
+
+### Named Rules
+**The Mono-Means-Data Rule.** Monospace marks something you could paste into a terminal or that measures time. It
+never decorates.
 
 ## Layout
 
-- A single column, at most 560px wide, centred on desktop with rules on both sides. The gutter is 16px.
-- **Inbox.** At the top, a sticky bar: the product name, an online summary pill and settings. Below it, the rail: one
-  full-width ticket at a time, snapping, with the next one peeking in from the right and dots under it. Then sessions
-  grouped by `user@host`, each a plain row: state word | project + snippet | agent + age.
-- **Empty rail.** A single line, "✓ Nothing waiting on you", and the list moves up.
-- **Session.** The title, then a meta line (state word, *for 4m*, agent, `user@host`). Then the tickets for this
-  session, the last message, a short timeline, and the reply composer pinned to the end.
+- A single column, at most 600px, centred. The gutter is 16px.
+- **Inbox:** the frosted bar, the status sentence, the request stack (full-width cards, 14px apart, longest wait
+  first), then groups by `user@host`, each an inset list.
+- **Session:** the bar carries the project and a state line. Then the first-prompt title, the thread (22px rhythm),
+  a "working" line while it runs, any open requests, and a sticky composer whose top fades into the ground.
+- **Settings:** groups with a small heading over an inset list, or a segmented control.
+- **Onboarding:** centred, with the 72px mark, a 31px title, a lede and full-width fields and buttons.
 
 ## Elevation & Depth
 
-There are two plies, and ply is the only rank: the rail and its tickets sit one layer above the list, and nothing else
-floats. Tickets and the "last message" slip carry `--shadow`, a soft offset shadow, never a halo. Rows separate by
-rules and ground, never by card-in-card chrome.
+There are three layers. The ground carries the sky. Surfaces (lists, cards, the composer) sit on soft two-part
+shadows (`--shadow`: a 1px contact plus a long, low-opacity drop). Chrome (the bar) is frosted glass that solidifies
+as content scrolls under it, using a scroll-driven animation. A request card adds a heat-tinted glow under itself.
+That glow is the only coloured shadow, and it means "waiting".
+
+### Named Rules
+**The Glass-Is-Chrome Rule.** Blur appears only where content really scrolls under something: the top bar and the
+banners. Cards are never glass.
 
 ## Shapes
 
-- **Tickets** have a perforated top edge (a CSS mask of half-circles every 12px) and 4px corners at the bottom only.
-- **Controls** (buttons, inputs, options) have 6px corners. The online summary is an 18px pill.
-- **Icons** are one authored set (`src/ui/icons.tsx`): a 24px grid, 1.75 stroke, round caps and joins.
+- **Pills** (999px) are buttons, the online pill, quick replies and timers.
+- **Large radii** step down with nesting: request 26, list 24, bubble 22, field 18, block 16, icon tile 12, inline
+  code 6.
+- A user bubble has a 6px tail corner at the bottom right.
+- **Icons** are one authored set in `src/ui/icons.tsx`: 24px grid, 1.75 stroke, round caps.
+- **The mark** is a watch ring with a live core and one amber dot in the ring's gap. It is the same drawing in the
+  app and in the home-screen icon.
 
 ## Components
 
 ### Buttons
-- **Primary:** an ink fill with paper text. It's the one per ticket that moves the work forward (Approve, Send answer
-  once complete, Pair).
-- **Outline:** a 1.5px ink outline, used for the counter-action (Deny).
-- **Quiet:** a `--rule` outline, for secondary actions (Copy, Skip for now).
-- **Disabled:** text in `--ink-3`, and an outline of `--ink-3` at 50% so it still reads as a button on ground and on
-  paper. It's never borderless.
-- Every target is at least 44px; buttons are 48px. The online pill looks 36px but its hit area is 44px.
+- **Primary** is the inverted pill, 52px. There is one per card: Approve, Send answer, Pair.
+- **Ghost** is a `--line-2` outline on a translucent surface, for the counter-action (Deny, Go to inbox).
+- **Quiet/small** is a 36px pill with a 44px hit area, for row actions (Turn on, Send test, Retry). **Danger** is
+  quiet with `--bad` text.
+- **Disabled** keeps its outline, in `--text-3`. Its label says what's missing ("Pick an answer").
 
-### Ticket (signature component)
-- The header holds the kind ("Claude needs approval", "Codex has a question") and the timer in mono, coloured by heat.
-- Under it, a 4px timer track whose fill is proportional to log(time waited).
-- Then where it is (project, `user@host`, #seq, clock time).
-- Then the proof: the literal command or path in a mono block, wrapping only between tokens so `--env` never splits.
-  A question shows its options.
-- Then the decision, at thumb height.
-- When its computer is offline, a note says an answer reaches it only if it reconnects within 5 minutes.
-- After you act, the footer becomes the command's status: Sending…, Waiting for your computer…, the result, or why it
-  was not applied.
+### Request card (signature)
+- **Header:** an icon tile (terminal, file or question) on a heat tint; the kind ("Claude needs approval"); project
+  · `user@host`; and a heat-coloured mono timer pill.
+- **Proof:** the literal command in a code block captioned with the tool. It wraps only between tokens, and an
+  edit's `-`/`+` lines are tinted.
+- **Question options:** 56px rows with a radio or checkbox tick.
+- **Decision:** Deny | Approve in a 1 : 1.55 grid. Once you act, the footer becomes the command's status.
+- **The live edge:** a conic light around the border that turns once every 5.5 s, coloured by the heat ramp. It is
+  static under reduced motion.
 
-### Rows
-A full-width button with a 76px state column, project title and a two-line snippet, and agent plus age on the right.
-Rows from an offline computer are muted, with the note "Showing what it last reported."
+### Session rows
+An orb, the project, agent · age on the right, and the state word plus a plain-text preview, clamped to two lines.
+Separators are inset, and rows from an offline computer show grey orbs.
 
-### Inputs
-Inputs are 48px, with a `--rule` outline that turns into the focus colour. The reply composer's quick replies only fill
-the box; nothing is sent until you press Send.
+### Conversation
+- **You:** right-aligned bubbles, with the time below (plus "From your phone" for replies).
+- **Agent:** a gradient monogram avatar, then Markdown at full width with no bubble.
+- **System events:** a compact row with an icon tile, a label, one line of mono detail, and the time.
 
-### Banners
-A `--ground-2` strip under the top bar, with an icon in full ink, one sentence and one action: Can't reach your relay
-(Retry), Muted until 08:00 (Unmute), This phone was unpaired.
+### Markdown
+- Paragraphs keep the agent's line breaks.
+- Lists nest. Task lists show ticks. Tables scroll inside a rounded frame.
+- Code blocks have a language caption and a Copy button, with light syntax colouring.
+- Quotes have a 2px neutral rule.
+- Links show as accent text with their host in brackets. They are never clickable, because an agent can print
+  anything. No HTML is ever interpreted.
+
+### Inputs and composer
+- Fields are 54px with an 18px radius. Focus shows a cyan ring of 4px at 15%.
+- The composer is a 28px-radius capsule with a 44px round Send. Quick-reply pills only fill the box; nothing is sent
+  until you press Send.
 
 ## Do's and Don'ts
 
 ### Do:
-- Put the literal proof (the exact command, path or question) on every request, before the decision.
-- Keep the calm path silent: no colour, no motion, no badges when nothing needs you.
-- Say what is true now. An offline computer's sessions are labelled as last reported, and a reply that can't arrive
-  says so before you type it.
-- Check every change at 390×844 in light and dark (`pnpm --filter @agentwatch/app screenshots`).
+- **Do** lead every screen with the answer: the status sentence, or the session's state in the bar.
+- **Do** show the exact command or file before any decision.
+- **Do** keep warm colours for waiting, and let the sky cool when nothing is.
+- **Do** render agent text as Markdown, and flatten it to plain text for previews.
 
 ### Don't:
-- Don't add cards around rows, eyebrow labels over headings, or coloured left borders.
-- Don't use red for anything but waiting on you.
-- Don't animate entrances. The one moving thing is the timer bar's fill. It and the spinner are stilled under
-  `prefers-reduced-motion`.
-- Don't use monospace as a "technical" costume. It is for literals and numbers.
+- **Don't** use gradient text, glass on cards, or coloured side borders.
+- **Don't** add brand colour to state, or state colour to decoration.
+- **Don't** make agent-provided links clickable, or render agent HTML.
+- **Don't** add equal-weight dashboard cards. The inbox is a sentence, a stack and lists.

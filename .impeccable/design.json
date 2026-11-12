@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-12T23:40:00Z",
+  "title": "Design System: AgentWatch",
+  "extensions": {
+    "colorMeta": {
+      "ground": { "role": "neutral", "displayName": "Day Ground" },
+      "night-ground": { "role": "neutral", "displayName": "Night Ground" },
+      "text": { "role": "primary", "displayName": "Ink (primary button fill, light)" },
+      "night-text": { "role": "primary", "displayName": "Starlight (primary button fill, dark)" },
+      "brand-cyan": { "role": "accent", "displayName": "Brand Cyan" },
+      "brand-violet": { "role": "accent", "displayName": "Brand Violet" },
+      "live": { "role": "state", "displayName": "Working" },
+      "idle": { "role": "state", "displayName": "Idle" },
+      "ok": { "role": "state", "displayName": "Online / Applied" },
+      "warm": { "role": "state", "displayName": "Needs you" },
+      "bad": { "role": "state", "displayName": "Error / Destructive" },
+      "heat-fresh": { "role": "heat", "displayName": "Heat: just asked" },
+      "heat-waiting": { "role": "heat", "displayName": "Heat: about 5 minutes" },
+      "heat-overdue": { "role": "heat", "displayName": "Heat: 30 minutes or more" }
+    },
+    "typographyMeta": {
+      "status": { "displayName": "Status sentence", "purpose": "The inbox's one-line answer. The only display size." },
+      "message": { "displayName": "Message", "purpose": "Agent Markdown in the conversation." },
+      "code": { "displayName": "Code", "purpose": "Commands, paths, code blocks. Data only." },
+      "timer": { "displayName": "Timer", "purpose": "Wait timers and ages, tabular." }
+    },
+    "shadows": [
+      {
+        "name": "surface",
+        "value": "0 1px 2px var(--shadow-c), 0 12px 32px -14px var(--shadow-c)",
+        "purpose": "Lists and cards on the ground."
+      },
+      {
+        "name": "lifted",
+        "value": "0 24px 60px -24px var(--shadow-c)",
+        "purpose": "The composer capsule."
+      },
+      {
+        "name": "heat-glow",
+        "value": "0 24px 50px -28px color-mix(in oklab, var(--heat) 55%, transparent)",
+        "purpose": "Under a waiting request only."
+      }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Every entrance, press and slide." },
+      { "name": "live-edge", "value": "5.5s linear infinite (conic --spin)", "purpose": "Waiting request border." },
+      { "name": "sky", "value": "1.4s ease-out-expo on --sky-a/--sky-b", "purpose": "Calm ↔ waiting temperature." },
+      { "name": "orb-working", "value": "1.1s linear orbit", "purpose": "Arc around a working session's orb." },
+      { "name": "orb-ping", "value": "1.9s ease-out-expo ping", "purpose": "A session that needs you." }
+    ],
+    "breakpoints": [{ "name": "column", "value": "600px" }]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action per card that moves the work forward: Approve, Send answer, Pair.",
+      "html": "<button class=\"ds-btn-primary\"><svg viewBox=\"0 0 24 24\" width=\"19\" height=\"19\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg>Approve</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px; border: 0; border-radius: 999px; background: #0a0c14; color: #fff; font: 620 15.5px 'Geist Variable', system-ui, sans-serif; letter-spacing: -0.01em; box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 10px 26px -12px rgb(10 12 20 / .7); transition: transform .25s cubic-bezier(.16,1,.3,1); cursor: pointer; } .ds-btn-primary:active { transform: scale(.97); } .ds-btn-primary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The counter-action next to a primary: Deny, Go to inbox.",
+      "html": "<button class=\"ds-btn-ghost\"><svg viewBox=\"0 0 24 24\" width=\"19\" height=\"19\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.1\" stroke-linecap=\"round\"><path d=\"M6.5 6.5l11 11\"/><path d=\"M17.5 6.5l-11 11\"/></svg>Deny</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px; border: 1px solid rgb(12 16 32 / .14); border-radius: 999px; background: #f4f5f9; color: #0a0c14; font: 620 15.5px 'Geist Variable', system-ui, sans-serif; cursor: pointer; } .ds-btn-ghost:hover { background: #e9ebf2; } .ds-btn-ghost:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Request Card",
+      "kind": "custom",
+      "refersTo": "request-card",
+      "description": "A request waiting on you: kind, where, heat timer, literal proof, decision. The edge turns while it waits.",
+      "html": "<article class=\"ds-req\"><header><span class=\"ds-req-icon\">&gt;_</span><span><b>Claude needs approval</b><small>api-server · dev@laptop</small></span><span class=\"ds-req-timer\">4m 16s</span></header><pre>pnpm --filter api-server db:migrate</pre></article>",
+      "css": ".ds-req { padding: 16px; border: 1px solid rgb(12 16 32 / .14); border-radius: 26px; background: radial-gradient(120% 90px at 50% 0, rgb(255 138 61 / .12), transparent), #fff; box-shadow: 0 24px 50px -28px rgb(255 138 61 / .55); font-family: 'Geist Variable', system-ui, sans-serif; } .ds-req header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; } .ds-req header span:nth-child(2) { flex: 1; display: grid; } .ds-req small { color: #4b5266; font-size: 13px; } .ds-req-icon { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; background: rgb(255 138 61 / .16); color: #b4410f; font-family: monospace; } .ds-req-timer { height: 30px; padding: 0 11px; border-radius: 999px; display: inline-flex; align-items: center; background: rgb(255 138 61 / .15); color: #9a5b00; font: 600 13px 'Geist Mono Variable', monospace; } .ds-req pre { margin: 0; padding: 12px 14px; border-radius: 16px; background: #f6f7fa; border: 1px solid rgb(12 16 32 / .08); font: 13px/1.6 'Geist Mono Variable', monospace; white-space: pre-wrap; }"
+    },
+    {
+      "name": "Session Row",
+      "kind": "custom",
+      "refersTo": "session-list",
+      "description": "One session in an inset list: orb, project, agent and age, state word and two-line preview.",
+      "html": "<div class=\"ds-list\"><button class=\"ds-row\"><span class=\"ds-orb\"></span><span class=\"ds-row-main\"><span class=\"ds-row-top\"><b>design-tokens</b><small>Claude · 7m</small></span><span class=\"ds-row-sub\"><em>Working</em> Checking contrast for every text/background pair.</span></span></button></div>",
+      "css": ".ds-list { border: 1px solid rgb(12 16 32 / .08); border-radius: 24px; background: #fff; overflow: hidden; } .ds-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 74px; padding: 14px 18px; border: 0; background: transparent; text-align: left; font-family: 'Geist Variable', system-ui, sans-serif; cursor: pointer; } .ds-row:hover { background: rgb(10 12 20 / .04); } .ds-orb { width: 10px; height: 10px; border-radius: 50%; background: #0874b3; box-shadow: 0 0 0 4px rgb(8 116 179 / .16); align-self: flex-start; margin-top: 7px; } .ds-row-main { flex: 1; display: grid; gap: 3px; } .ds-row-top { display: flex; justify-content: space-between; } .ds-row-top b { font-size: 15.5px; font-weight: 600; } .ds-row-top small { color: #646b7f; font-size: 12.5px; } .ds-row-sub { color: #4b5266; font-size: 13.5px; } .ds-row-sub em { font-style: normal; font-weight: 600; color: #0874b3; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Pairing code and phone name fields.",
+      "html": "<input class=\"ds-input\" placeholder=\"xxxxxxxx.xxxxxxxxxxxxxxxx\">",
+      "css": ".ds-input { width: 100%; height: 54px; padding: 0 18px; border: 1px solid rgb(12 16 32 / .14); border-radius: 18px; background: #fff; color: #0a0c14; font: 16px 'Geist Variable', system-ui, sans-serif; } .ds-input:focus { outline: none; border-color: #5ee7ff; box-shadow: 0 0 0 4px rgb(94 231 255 / .15); } .ds-input::placeholder { color: #646b7f; }"
+    },
+    {
+      "name": "User Bubble",
+      "kind": "custom",
+      "refersTo": "user-bubble",
+      "description": "Your prompt or phone reply in the conversation.",
+      "html": "<div class=\"ds-bubble\">Move the billing webhooks onto the job queue and keep retries <b>idempotent</b>.</div>",
+      "css": ".ds-bubble { max-width: 86%; margin-left: auto; padding: 11px 16px; border-radius: 22px 22px 6px 22px; background: #e2e6f3; color: #0a0c14; font: 15px/1.5 'Geist Variable', system-ui, sans-serif; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "nav",
+      "description": "Mute duration and theme: a track with a sliding thumb.",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">System</button><button>Light</button><button>Dark</button></div>",
+      "css": ".ds-seg { display: grid; grid-template-columns: repeat(3, 1fr); padding: 4px; border-radius: 18px; background: #e6e8ef; border: 1px solid rgb(12 16 32 / .08); } .ds-seg button { height: 44px; border: 0; border-radius: 14px; background: transparent; color: #4b5266; font: 560 14px 'Geist Variable', system-ui, sans-serif; cursor: pointer; } .ds-seg button[aria-pressed='true'] { background: #fff; color: #0a0c14; box-shadow: 0 4px 14px -4px rgb(20 28 60 / .15); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Night-sky glass",
+    "overview": "AgentWatch answers one question first, \"does anything need me?\", in a single sentence at the top of the inbox. Blocked work sits directly under it, each request carrying its exact proof and its decision at thumb height. Everything else is a quiet, grouped list, and a session reads like a modern chat. The craft bar is current premium software: dark-first near-black blue under a soft top light, frosted chrome, generous radii, Geist type and an inverted pill as the one primary action, with a full light twin.",
+    "keyCharacteristics": [
+      "One status sentence answers the glance; the sky behind it changes temperature with it.",
+      "Waiting requests have a live edge that heats from amber to red as the wait grows.",
+      "State is carried by a word, an orb shape and a colour, never colour alone.",
+      "Agent text is rendered Markdown with highlighted code, never raw text.",
+      "Every control is a standard one: buttons, lists, segmented controls, a text field."
+    ],
+    "rules": [
+      {
+        "name": "The Warm-Is-Earned Rule",
+        "body": "Nothing decorative is warm. When nothing waits on you, the screen has no orange or red, and the sky is cool.",
+        "section": "colors"
+      },
+      {
+        "name": "The Never-Colour-Alone Rule",
+        "body": "Every state has a word and an orb behaviour; every decision has an icon and a label; online and offline are a filled dot versus a ring.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono-Means-Data Rule",
+        "body": "Monospace marks something you could paste into a terminal or that measures time. It never decorates.",
+        "section": "typography"
+      },
+      {
+        "name": "The Glass-Is-Chrome Rule",
+        "body": "Blur appears only where content really scrolls under something: the top bar and the banners. Cards are never glass.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead every screen with the answer: the status sentence, or the session's state in the bar.",
+      "Do show the exact command or file before any decision.",
+      "Do keep warm colours for waiting, and let the sky cool when nothing is.",
+      "Do render agent text as Markdown, and flatten it to plain text for previews."
+    ],
+    "donts": [
+      "Don't use gradient text, glass on cards, or coloured side borders.",
+      "Don't add brand colour to state, or state colour to decoration.",
+      "Don't make agent-provided links clickable, or render agent HTML.",
+      "Don't add equal-weight dashboard cards. The inbox is a sentence, a stack and lists."
+    ]
+  }
+}

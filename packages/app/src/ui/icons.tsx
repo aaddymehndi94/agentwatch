@@ -1,4 +1,4 @@
-// One small authored icon set: 24px grid, 1.75 stroke, round caps and joins.
+// One authored icon set: 24px grid, 1.75 stroke, round caps and joins. Plus the AgentWatch mark.
 
 import type { JSX } from 'preact'
 
@@ -27,6 +27,7 @@ function Icon(props: { d: string | string[]; label?: string; class?: string }): 
 export const Check = () => <Icon d="M5 12.5l4.5 4.5L19 7.5" />
 export const Cross = () => <Icon d={['M6.5 6.5l11 11', 'M17.5 6.5l-11 11']} />
 export const Back = () => <Icon d="M15 5l-7 7 7 7" />
+export const Chevron = () => <Icon d="M9.5 6l6 6-6 6" />
 export const Send = () => <Icon d={['M12 19V6', 'M6.5 11.5L12 6l5.5 5.5']} />
 export const Gear = () => (
   <Icon
@@ -66,5 +67,55 @@ export const Offline = () => (
     ]}
   />
 )
-export const Copy = () => <Icon d={['M9 9h10v10H9z', 'M5 15V5h10']} />
+export const Copy = () => (
+  <Icon d={['M9.5 9.5h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z', 'M5.5 15h-1V4.5h10.5v1']} />
+)
 export const Clock = () => <Icon d={['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7.5V12l3 2']} />
+export const Terminal = () => <Icon d={['M4 6.5l5 5-5 5', 'M11.5 17.5H20']} />
+export const FileEdit = () => (
+  <Icon
+    d={['M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z', 'M13.5 3.5V9H19', 'M9 15.5h6', 'M12 12.5v6']}
+  />
+)
+export const Question = () => (
+  <Icon
+    d={['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8', 'M12 17v.01']}
+  />
+)
+export const Laptop = () => (
+  <Icon d={['M5 6.5a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1V15H5z', 'M2.5 18.5h19', 'M5 15l-2.5 3.5', 'M19 15l2.5 3.5']} />
+)
+export const Phone = () => (
+  <Icon
+    d={[
+      'M8 2.5h8a1.5 1.5 0 0 1 1.5 1.5v16a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V4A1.5 1.5 0 0 1 8 2.5z',
+      'M11 18.5h2',
+    ]}
+  />
+)
+export const Reply = () => <Icon d={['M9.5 7.5L4.5 12l5 4.5', 'M4.5 12h9a6 6 0 0 1 6 6v1']} />
+export const Stop = () => <Icon d="M7 7h10v10H7z" />
+
+/** The AgentWatch mark: a watch ring with a live core, the same drawing as the app icon. */
+export function Mark({ size = 28 }: { size?: number }) {
+  return (
+    <svg class="mark-logo" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+      <defs>
+        <linearGradient id="aw-g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5ee7ff" />
+          <stop offset="1" stop-color="#9b87ff" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="16" fill="#0b0e1c" />
+      <path
+        d="M32 12.5a19.5 19.5 0 1 1-17.6 11.1"
+        fill="none"
+        stroke="url(#aw-g)"
+        stroke-width="5"
+        stroke-linecap="round"
+      />
+      <circle cx="17.2" cy="17.6" r="3.6" fill="#ffb547" />
+      <circle cx="32" cy="32" r="7.5" fill="url(#aw-g)" />
+    </svg>
+  )
+}

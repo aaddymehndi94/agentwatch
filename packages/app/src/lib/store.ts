@@ -310,7 +310,7 @@ export function applyTheme(theme: Theme): void {
   if (theme === 'system') root.removeAttribute('data-theme')
   else root.setAttribute('data-theme', theme)
   const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d0e0f' : '#dfe2e1')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#05060a' : '#f2f3f7')
 }
 
 export async function setTheme(theme: Theme): Promise<void> {
