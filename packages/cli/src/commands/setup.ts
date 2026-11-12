@@ -11,7 +11,15 @@ import { generateVaultKey } from '@agentwatch/protocol'
 import { call, ensureDaemon, waitForRelay } from '../client.ts'
 import { Config, loadConfig, relayUrlProblem, saveConfig } from '../config.ts'
 import { socketAlive } from '../daemon/main.ts'
-import { type InstallReport, install, MIN_NODE_MAJOR, ownNodeCopy, pickNode, trustedBinary } from '../install.ts'
+import {
+  type InstallReport,
+  install,
+  MIN_NODE_MAJOR,
+  ownNodeCopy,
+  pickNode,
+  restartService,
+  trustedBinary,
+} from '../install.ts'
 import { type Paths, paths } from '../paths.ts'
 
 export const INSTALL_FLAGS = {
@@ -19,6 +27,7 @@ export const INSTALL_FLAGS = {
   'no-messages': { type: 'boolean', default: false },
   messages: { type: 'boolean', default: false },
   'no-claude': { type: 'boolean', default: false },
+  'no-service': { type: 'boolean', default: false },
   node: { type: 'string' },
   force: { type: 'boolean', default: false },
 } as const
@@ -131,7 +140,7 @@ export function applyFlags(cfg: Config, v: Flags): Config | null {
 export async function finishSetup(
   p: Paths,
   cfg: Config,
-  values: { 'no-claude'?: boolean; node?: string },
+  values: { 'no-claude'?: boolean; 'no-service'?: boolean; node?: string },
   previous: Config | null,
 ): Promise<number> {
   if (JSON.stringify(cfg) !== JSON.stringify(previous)) {
@@ -159,6 +168,8 @@ export async function finishSetup(
       bundleDir,
       node,
       claude: !values['no-claude'],
+      // AGENTWATCH_HOME is a separate instance (tests, development): it never gets the user's service.
+      service: !values['no-service'] && !process.env.AGENTWATCH_HOME,
     })
   } catch (e) {
     console.error(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -171,6 +182,12 @@ export async function finishSetup(
     if (!report.command.onPath) console.log(`    ! ${tilde(path.dirname(report.command.path))} is not on your PATH yet`)
   } else if (report.command.detail) console.log(`! ${report.command.detail}`)
   printClaude(report)
+  if (report.service.status === 'enabled')
+    console.log('✓ Service agentwatch.service enabled: the daemon starts at login (at boot, if this user lingers)')
+  else if (report.service.status === 'unchanged') console.log('✓ Service agentwatch.service enabled')
+  else if (report.service.status === 'failed')
+    console.log(`! Could not enable agentwatch.service: ${report.service.detail}`)
+  else if (!values['no-service'] && !process.env.AGENTWATCH_HOME) console.log(`· ${report.service.detail}`)
   if (report.codexVersion)
     console.log(`✓ Codex ${report.codexVersion}: sessions show up through its app-server, nothing to install`)
   for (const b of report.backups) console.log(`    backed up ${tilde(b)}`)
@@ -179,6 +196,11 @@ export async function finishSetup(
   if (await socketAlive(p.socket)) await call('POST', '/v1/shutdown').catch(() => {})
   for (let i = 0; i < 30 && (await socketAlive(p.socket)); i++) await new Promise((r) => setTimeout(r, 100))
   const entry = path.join(p.installDir, 'current', 'agentwatch.mjs')
+  if (report.service.status === 'enabled' || report.service.status === 'unchanged') {
+    // Let systemd run it, so it is restarted if it crashes; fall back to starting it ourselves.
+    restartService()
+    for (let i = 0; i < 30 && !(await socketAlive(p.socket)); i++) await new Promise((r) => setTimeout(r, 100))
+  }
   const up = (await ensureDaemon(p, 5000, { node, entry })) && (await waitForRelay(10_000))
   if (up) console.log(`✓ Daemon running, connected to ${new URL(cfg.relayUrl).host} (privacy: ${cfg.privacy})`)
   else console.log('! Saved and installed, but the daemon could not reach the relay yet. Run `agentwatch doctor`.')

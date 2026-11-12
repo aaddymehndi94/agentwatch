@@ -70,8 +70,13 @@ Check every link from this computer to the phone:
 agentwatch doctor --test-push
 ```
 
-Finally, **restart your Claude Code sessions** so they load the plugin. Codex needs nothing: AgentWatch attaches to
-the app-server that Codex's TUI already uses.
+Finally, **restart your Claude Code sessions** so they load the plugin. Codex needs nothing installed: AgentWatch
+attaches to the app-server that Codex's TUI already uses.
+
+You never start AgentWatch by hand. Where the user has a systemd user session (a desktop login, or a user with
+lingering on), setup installs `agentwatch.service`, which starts the daemon at login, or at boot for a lingering user.
+Elsewhere, the first Claude Code hook or `agentwatch` command starts it. On a computer without the service where you
+only run Codex, run any `agentwatch` command (say, `agentwatch status`) once after a reboot.
 
 ### More OS users or computers
 
@@ -94,6 +99,7 @@ Options for `relay deploy`, `setup` and `join`:
 | `--privacy summary` | No text (prompts, commands, messages) ever leaves this user. The phone still sees states, project names and pushes. Good for a work account. |
 | `--no-messages` | Approvals and answers still work, but free-text replies from the phone are refused. |
 | `--no-claude` | Don't install the Claude Code plugin. |
+| `--no-service` | Don't install the systemd user service; the daemon then starts with the first Claude hook. |
 
 Already deployed the relay another way? Connect with `agentwatch setup --relay https://agentwatch.<you>.workers.dev`
 and paste the relay's claim secret when asked (or set `AGENTWATCH_CLAIM_SECRET`). The secret is the relay's

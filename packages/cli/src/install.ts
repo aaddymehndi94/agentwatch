@@ -10,6 +10,7 @@
 
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { trustedBinary } from './own.ts'
 import type { Paths } from './paths.ts'
@@ -41,6 +42,8 @@ export interface InstallContext {
   node: string
   /** Install the Claude Code plugin (default true). */
   claude?: boolean
+  /** Install a systemd user service where there is a systemd user session (default true). */
+  service?: boolean
   run?: Runner
   log?: (line: string) => void
   /** Backup suffix; one per run so every file backed up in one run shares it. */
@@ -59,8 +62,14 @@ export interface InstallReport {
   launcher: string
   command: { path: string; linked: boolean; onPath: boolean; detail?: string }
   claude: PluginResult
+  service: ServiceResult
   codexVersion?: string
   backups: string[]
+}
+
+export interface ServiceResult {
+  status: 'enabled' | 'unchanged' | 'skipped' | 'failed'
+  detail?: string
 }
 
 // ── Node ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -250,7 +259,13 @@ export function install(ctx: InstallContext): InstallReport {
       ? { status: 'skipped', detail: 'Skipped the Claude Code plugin (--no-claude).' }
       : installClaudePlugin(ctx, run, versionDir, (f) => backup(f, stamp, backups))
 
-  // 4. Codex: only detected for now.
+  // 4. A service, so the daemon is up without waiting for a Claude hook: Codex has none.
+  const service: ServiceResult =
+    ctx.service === false
+      ? { status: 'skipped', detail: 'Skipped the systemd service.' }
+      : installService(ctx, run, cmd)
+
+  // 5. Codex: only detected for now.
   const codex = findOnPath('codex', ctx)
   const cv = codex ? run(codex, ['--version']) : null
   const codexVersion = cv && cv.code === 0 ? cv.stdout.trim().replace(/^codex-cli\s+/, '') : undefined
@@ -261,6 +276,7 @@ export function install(ctx: InstallContext): InstallReport {
     launcher,
     command,
     claude,
+    service,
     ...(codexVersion ? { codexVersion } : {}),
     backups,
   }
@@ -407,6 +423,75 @@ function installClaudePlugin(
 
 // ── Uninstall ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── systemd user service ───────────────────────────────────────────────────────────────────────────────────────────
+
+export const SERVICE = 'agentwatch.service'
+
+const serviceFile = (ctx: Pick<InstallContext, 'home' | 'env'>) =>
+  path.join(ctx.env.XDG_CONFIG_HOME || path.join(ctx.home, '.config'), 'systemd', 'user', SERVICE)
+
+/** `ExecStart` quoting: double quotes, backslash escapes, and `%` doubled (systemd specifiers). */
+const unitQuote = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`
+
+export function serviceUnit(command: string): string {
+  return `# Written by \`agentwatch setup\`; \`agentwatch uninstall\` removes it.
+# Starts the AgentWatch daemon when this user's systemd starts: at login, or at boot for a lingering user.
+[Unit]
+Description=AgentWatch daemon (relays your coding agents to your phone)
+After=network-online.target
+
+[Service]
+ExecStart=${unitQuote(command)} daemon --foreground
+# Exit 0 means stopped on purpose (\`agentwatch stop\`, an upgrade) or another copy already runs.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+`
+}
+
+/**
+ * Runs `systemctl --user` for this user, or null without a systemd user manager to talk to. A shell from
+ * \`sudo -iu\` has no XDG_RUNTIME_DIR, though a lingering user's manager is there: point at it.
+ */
+function systemctl(ctx: Pick<InstallContext, 'env' | 'home'>, run: Runner): ((args: string[]) => RunResult) | null {
+  if (process.platform !== 'linux') return null
+  const bin = findOnPath('systemctl', { ...ctx, bundleDir: '', node: '' } as InstallContext)
+  if (!bin) return null
+  const uid = process.getuid?.()
+  const runtime =
+    ctx.env.XDG_RUNTIME_DIR || (uid !== undefined && fs.existsSync(`/run/user/${uid}/bus`) ? `/run/user/${uid}` : '')
+  const sc = (args: string[]) =>
+    runtime && !ctx.env.XDG_RUNTIME_DIR
+      ? run('env', [`XDG_RUNTIME_DIR=${runtime}`, bin, '--user', ...args])
+      : run(bin, ['--user', ...args])
+  return sc(['show-environment']).code === 0 ? sc : null
+}
+
+/** Start (or restart) the daemon under systemd. False if there's no user systemd to ask. */
+export function restartService(
+  ctx: Pick<InstallContext, 'env' | 'home'> = { env: process.env, home: process.env.HOME || os.homedir() },
+  run: Runner = defaultRunner,
+): boolean {
+  const sc = systemctl(ctx, run)
+  return !!sc && sc(['restart', SERVICE]).code === 0
+}
+
+function installService(ctx: InstallContext, run: Runner, command: string): ServiceResult {
+  const sc = systemctl(ctx, run)
+  if (!sc)
+    return {
+      status: 'skipped',
+      detail: 'No systemd user session here: the daemon starts with the first Claude hook or `agentwatch` command.',
+    }
+  const changed = writeIfChanged(serviceFile(ctx), serviceUnit(command), 0o644)
+  if (changed) sc(['daemon-reload'])
+  if (!changed && sc(['is-enabled', SERVICE]).code === 0) return { status: 'unchanged' }
+  const r = sc(['enable', SERVICE])
+  return r.code === 0 ? { status: 'enabled' } : { status: 'failed', detail: (r.stderr || r.stdout).trim() }
+}
+
 export interface UninstallReport {
   removed: string[]
   claude: PluginResult
@@ -418,6 +503,14 @@ export function uninstall(ctx: Omit<InstallContext, 'bundleDir' | 'node'>): Unin
   const stamp = ctx.stamp ?? stampNow()
   const backups: string[] = []
   const removed: string[] = []
+  const unit = serviceFile(ctx)
+  if (fs.existsSync(unit)) {
+    const sc = systemctl(ctx, run)
+    sc?.(['disable', '--now', SERVICE])
+    fs.rmSync(unit, { force: true })
+    sc?.(['daemon-reload'])
+    removed.push(unit)
+  }
   let claude: PluginResult = { status: 'skipped', detail: 'Claude Code not found for this user.' }
   const bin = findOnPath('claude', { ...ctx, bundleDir: '', node: '' })
   if (bin) {

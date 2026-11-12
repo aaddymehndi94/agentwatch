@@ -24,6 +24,7 @@ Options for setup, join and relay deploy
   --privacy full|summary    summary: no text (prompts, commands, replies) ever leaves this user
   --no-messages             don't accept free-text replies from the phone (approvals still work)
   --no-claude               don't install the Claude Code plugin
+  --no-service              don't install the systemd user service that starts the daemon at login
   --node <path>             Node (22+) for the hook launchers; picked automatically otherwise
 
 Your own scripts and agents

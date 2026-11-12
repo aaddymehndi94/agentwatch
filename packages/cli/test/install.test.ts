@@ -48,6 +48,18 @@ else if (args[0] === 'plugin' && args[1] === 'marketplace' && args[2] === 'remov
 } else { console.error('fake claude: unexpected ' + a); process.exit(3) }
 `
 
+// A user systemd that answers only when FAKE_SYSTEMD=1, and remembers whether the service is enabled.
+const FAKE_SYSTEMCTL = `#!/bin/sh
+echo "$*" >> "$FAKE_CLAUDE_DIR/systemctl.log"
+[ "$FAKE_SYSTEMD" = 1 ] || exit 1
+case "$*" in
+  "--user is-enabled agentwatch.service") [ -f "$FAKE_CLAUDE_DIR/enabled" ] || exit 1 ;;
+  "--user enable agentwatch.service") touch "$FAKE_CLAUDE_DIR/enabled" ;;
+  "--user disable --now agentwatch.service") rm -f "$FAKE_CLAUDE_DIR/enabled" ;;
+esac
+exit 0
+`
+
 let tmp: string
 let home: string
 let fakeBin: string
@@ -66,6 +78,7 @@ beforeEach(() => {
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
   fs.mkdirSync(fakeBin)
   fs.writeFileSync(path.join(fakeBin, 'claude'), FAKE_CLAUDE, { mode: 0o755 })
+  fs.writeFileSync(path.join(fakeBin, 'systemctl'), FAKE_SYSTEMCTL, { mode: 0o755 })
   fs.writeFileSync(settingsFile(), JSON.stringify(ORIGINAL, null, 2))
   env = {
     HOME: home,
@@ -78,6 +91,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  delete process.env.FAKE_SYSTEMD
   delete process.env.FAKE_CLAUDE_DIR
   delete process.env.CLAUDE_CONFIG_DIR
   fs.rmSync(tmp, { recursive: true, force: true })
@@ -172,6 +186,34 @@ describe('uninstall', () => {
     expect(s.enabledPlugins).toEqual(ORIGINAL.enabledPlugins)
     expect(s).toMatchObject({ theme: 'dark', permissions: ORIGINAL.permissions })
     expect(r.backups).toContain(`${settingsFile()}.agentwatch-T3.bak`)
+  })
+})
+
+describe('systemd user service', () => {
+  const unit = () => path.join(home, '.config/systemd/user/agentwatch.service')
+  const sc = () => fs.readFileSync(path.join(fakeBin, 'systemctl.log'), 'utf8').trim().split('\n')
+
+  it('is installed and enabled where there is a user systemd, so Codex-only users get a daemon too', () => {
+    process.env.FAKE_SYSTEMD = '1'
+    expect(install(ctx()).service).toEqual({ status: 'enabled' })
+    const text = fs.readFileSync(unit(), 'utf8')
+    expect(text).toContain(
+      `ExecStart="${path.join(home, '.local/share/agentwatch/bin/agentwatch')}" daemon --foreground`,
+    )
+    expect(text).toContain('WantedBy=default.target')
+    expect(sc()).toEqual(expect.arrayContaining(['--user daemon-reload', '--user enable agentwatch.service']))
+    expect(install({ ...ctx(), stamp: 'T2' }).service).toEqual({ status: 'unchanged' })
+
+    const r = uninstall({ paths: paths(env), home, env, stamp: 'T3' })
+    expect(r.removed).toContain(unit())
+    expect(fs.existsSync(unit())).toBe(false)
+    expect(sc()).toContain('--user disable --now agentwatch.service')
+  })
+
+  it('is skipped, writing nothing, without a user systemd', () => {
+    expect(install(ctx()).service).toMatchObject({ status: 'skipped', detail: /first Claude hook/ })
+    expect(fs.existsSync(unit())).toBe(false)
+    expect(install({ ...ctx(), service: false }).service.status).toBe('skipped')
   })
 })
 

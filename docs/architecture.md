@@ -32,7 +32,9 @@ nothing listens on the network.
 
 - **Started on demand.** The first hook (or CLI command) that finds no socket spawns `agentwatch daemon`, detached. A
   live-socket check plus an `O_EXCL` lock file keeps it to one instance. This works without `systemd --user` or a
-  login session, for example under tmux inside another user's desktop.
+  login session, for example under tmux inside another user's desktop. Where there is a user systemd, setup also
+  installs `agentwatch.service`, so the daemon is up at login (or boot, for a lingering user) even when only Codex
+  runs, since Codex runs no hook of ours.
 - **State.** The socket, lock file and log are in `~/.local/state/agentwatch/` (mode 0700), and the config is at
   `~/.config/agentwatch/config.json` (mode 0600). Sessions are saved to `sessions.json`, so a restart keeps the list.
   `AGENTWATCH_HOME` moves all of it, and the tests use that.
