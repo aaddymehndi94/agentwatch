@@ -62,6 +62,17 @@ describe('Claude adapter helpers', () => {
     expect(matchKey('Bash', { command: 'ls' })).not.toBe(matchKey('Bash', { command: 'rm -rf /' }))
   })
 
+  it('matches a question answered at the terminal, which also gets `annotations` (Claude Code 2.1.322)', () => {
+    const req = byEvent('PermissionRequest', 1)
+    const post = byEvent('PostToolUse', 1)
+    const key = matchKey(req.tool_name, req.tool_input)
+    const answered = (extra: Record<string, unknown>) =>
+      matchKey(post.tool_name, { ...(post.tool_input as Record<string, unknown>), ...extra })
+    expect(answered({ annotations: {} })).toBe(key)
+    expect(answered({ annotations: { 'Ship it?': { notes: 'after lunch' } } })).toBe(key)
+    expect(matchKey('AskUserQuestion', { questions: [{ question: 'Deploy?' }] })).not.toBe(key)
+  })
+
   it('key order does not matter', () => {
     expect(matchKey('Edit', { a: 1, b: { c: 2, d: 3 } })).toBe(matchKey('Edit', { b: { d: 3, c: 2 }, a: 1 }))
   })

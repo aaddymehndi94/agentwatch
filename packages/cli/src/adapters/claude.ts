@@ -171,9 +171,18 @@ export function hookOutput(outcome: Outcome, toolInput: Record<string, unknown>)
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } })
 }
 
-/** Identity of a tool call for matching a held request to the PostToolUse that follows a local answer. */
+/**
+ * Identity of a tool call for matching a held request to the PostToolUse that follows a local answer. A question is
+ * identified by its questions alone: answering it adds fields to the input (`answers`, and `annotations` when it was
+ * answered in the terminal), and a mismatch would leave it open on the phone until the turn ends.
+ */
 export function matchKey(tool: unknown, input: unknown): string {
-  const rest = isRecord(input) ? Object.fromEntries(Object.entries(input).filter(([k]) => k !== 'answers')) : input
+  const rest =
+    tool === 'AskUserQuestion' && isRecord(input)
+      ? { questions: input.questions }
+      : isRecord(input)
+        ? Object.fromEntries(Object.entries(input).filter(([k]) => k !== 'answers'))
+        : input
   return `${String(tool)}\u0000${stableStringify(rest)}`
 }
 

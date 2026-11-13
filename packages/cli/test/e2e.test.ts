@@ -186,8 +186,9 @@ describe('walking skeleton', () => {
     expect(req.kind).toBe('question')
     const info = await phone.open<RequestInfo>(req.sealed, bind.request(sourceId, req))
     expect(info.questions?.[0]).toMatchObject({ question: 'Ship it?', options: [{ label: 'Yes' }, { label: 'No' }] })
-    // Claude answered locally: the PostToolUse carries the same input plus `answers`.
-    await hook(home, byEvent('PostToolUse', 1))
+    // Answered in the terminal: the PostToolUse carries the same questions plus `answers` and `annotations`.
+    const post = byEvent('PostToolUse', 1)
+    await hook(home, { ...post, tool_input: { ...(post.tool_input as object), annotations: {} } })
     const out = await held
     expect(out).toMatchObject({ code: 0, stdout: '' })
     await waitFor('answered locally', async () =>

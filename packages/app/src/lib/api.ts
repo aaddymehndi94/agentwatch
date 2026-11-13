@@ -11,8 +11,23 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(token: string | null, method: string, path: string, body?: unknown): Promise<T> {
+/**
+ * How long a read may take. A phone that slept or switched networks can leave a request hanging on a dead connection
+ * forever; without a limit, polling stops and the app keeps showing old state as if it were live.
+ */
+export const READ_TIMEOUT_MS = 15_000
+
+export async function api<T>(
+  token: string | null,
+  method: string,
+  path: string,
+  body?: unknown,
+  timeoutMs?: number,
+): Promise<T> {
+  const ctl = new AbortController()
+  const timer = timeoutMs ? setTimeout(() => ctl.abort(), timeoutMs) : undefined
   let res: Response
+  let data: { error?: string }
   try {
     res = await fetch(path, {
       method,
@@ -22,11 +37,17 @@ export async function api<T>(token: string | null, method: string, path: string,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       cache: 'no-store',
+      signal: ctl.signal,
     })
+    data = (await res.json().catch((e: unknown) => {
+      if (ctl.signal.aborted) throw e
+      return {}
+    })) as { error?: string }
   } catch {
     throw new ApiError(0, 'Can’t reach your relay. Check your connection.')
+  } finally {
+    clearTimeout(timer)
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string }
   if (!res.ok) {
     const msg =
       res.status === 401
@@ -45,10 +66,12 @@ export interface DeviceInfo {
   self: boolean
 }
 
-export const getState = (token: string) => api<StateView>(token, 'GET', '/api/state')
+export const getState = (token: string) => api<StateView>(token, 'GET', '/api/state', undefined, READ_TIMEOUT_MS)
 export const getEvents = (token: string, sourceId: string, sessionId: string) =>
   api<{ sessionId: string; at: number; kind: string; sealed?: string }[]>(
     token,
     'GET',
     `/api/sessions/${encodeURIComponent(sourceId)}/${encodeURIComponent(sessionId)}/events`,
+    undefined,
+    READ_TIMEOUT_MS,
   )
