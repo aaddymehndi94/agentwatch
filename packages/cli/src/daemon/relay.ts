@@ -24,7 +24,7 @@ export interface RelayLinkOptions {
   relayUrl: string
   sourceToken: string
   hello: () => SourceMessage
-  snapshot: () => Promise<SourceMessage>
+  snapshot: () => Promise<SourceMessage[]>
   onMessage: (msg: RelayMessage) => void
   onStatus?: (connected: boolean) => void
   log: Logger
@@ -96,7 +96,7 @@ export class RelayLink {
       const snapshot = await this.o.snapshot()
       // The socket may have closed (and another opened) while the snapshot was being sealed: leave the queue for that one.
       if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return
-      this.rawSend(snapshot)
+      for (const msg of snapshot) this.rawSend(msg)
       const cutoff = Date.now() - QUEUE_TTL_MS
       for (const q of this.queued.splice(0)) if (q.at > cutoff) this.rawSend(q.msg)
       if (this.pingTimer) clearInterval(this.pingTimer)

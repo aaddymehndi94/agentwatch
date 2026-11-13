@@ -1,7 +1,7 @@
 // One session as a conversation: your prompts, the agent's replies (rendered Markdown), what it asked for and how
 // that was answered, then anything still waiting on you and the reply composer.
 
-import type { ComponentChildren } from 'preact'
+import { type ComponentChildren, Fragment } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { getEvents } from '../lib/api.ts'
 import { demoEvents } from '../lib/demo.ts'
@@ -56,6 +56,16 @@ function Working({ s, elapsed }: { s: SessionVM; elapsed: number | null }) {
   )
 }
 
+/** "Context 43%", "$1.27": how full the session's context is and what it has cost, as far as the agent says. */
+function sessionUsage(s: SessionVM): string[] {
+  const u = s.info?.usage
+  if (!u || s.state === 'ended') return []
+  const parts: string[] = []
+  if (u.contextPercent !== undefined) parts.push(`Context ${Math.round(u.contextPercent)}%`)
+  if (u.costUsd !== undefined) parts.push(u.costUsd < 0.01 ? '< $0.01' : `$${u.costUsd.toFixed(2)}`)
+  return parts
+}
+
 export function SessionScreen(props: {
   app: AppState
   now: number
@@ -73,6 +83,8 @@ export function SessionScreen(props: {
   const { events, loaded } = useEvents(app, sourceId, sessionId, s?.updatedAt ?? 0)
   const t = now + (model?.skew ?? 0)
   const items = s ? thread(events, s) : []
+  const title = s?.info?.title && s.info.title !== projectName(s) ? s.info.title : null
+  const usage = s ? sessionUsage(s) : []
   const opened = useRef(false)
   const seen = useRef(0)
   // Measured before this render lands: were you reading the newest message?
@@ -123,9 +135,9 @@ export function SessionScreen(props: {
               </p>
             </div>
           )}
-          {s.info?.title && s.info.title !== projectName(s) && (
+          {title || usage.length ? (
             <header class="convo-head">
-              <h1>{s.info.title}</h1>
+              {title && <h1>{title}</h1>}
               <p>
                 Started {clock(s.startedAt)}
                 <span class="sep" aria-hidden="true" />
@@ -135,8 +147,18 @@ export function SessionScreen(props: {
                       s.state === 'working' && s.turnStartedAt ? duration(t - s.turnStartedAt) : ago(s.stateSince, t)
                     }`}
               </p>
+              {usage.length > 0 && (
+                <p class="convo-usage">
+                  {usage.map((part, i) => (
+                    <Fragment key={part}>
+                      {i > 0 && <span class="sep" aria-hidden="true" />}
+                      {part}
+                    </Fragment>
+                  ))}
+                </p>
+              )}
             </header>
-          )}
+          ) : null}
           {items.length === 0 && requests.length === 0 && (
             <p class="convo-empty">
               Nothing here yet. Your prompts, {agentLabel(s.agent)}’s replies and anything it asks for appear as they

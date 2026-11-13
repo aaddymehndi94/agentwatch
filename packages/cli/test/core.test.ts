@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   bind,
   buildCommand,
@@ -11,14 +13,27 @@ import {
   type SourceMessage,
 } from '@agentwatch/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeAdapter, claudeFailure, describeTool, hookOutput, matchKey } from '../src/adapters/claude.ts'
+import {
+  ClaudeAdapter,
+  claudeFailure,
+  claudeWindows,
+  describeTool,
+  hookOutput,
+  matchKey,
+} from '../src/adapters/claude.ts'
 import { type AgentAdapter, Core, type CoreOptions } from '../src/daemon/core.ts'
-import { loadClaudeFixture } from './harness.ts'
+import { CLI_DIR, loadClaudeFixture } from './harness.ts'
 
 const SOURCE = 'src-1'
 const fixture = loadClaudeFixture()
 const byEvent = (name: string, n = 0) => fixture.filter((e) => e.hook_event_name === name)[n]!
 const SID = String(fixture[0]!.session_id)
+/** `$.session.usage()` after a turn, recorded from Claude Code 2.1.323 (spike 00). */
+const RECORDED_USAGE = (
+  JSON.parse(fs.readFileSync(path.join(CLI_DIR, 'test/fixtures/claude-2.1.323-busy-submit-usage.json'), 'utf8')) as {
+    mod: { ev: string; usage?: Record<string, unknown> }[]
+  }
+).mod.find((e) => e.ev === 'usage')!.usage!
 
 let key: CryptoKey
 let sent: SourceMessage[]
@@ -82,6 +97,22 @@ describe('Claude adapter helpers', () => {
     expect(claudeFailure('authentication_failed', '').kind).toBe('auth')
     expect(claudeFailure('invalid_request', 'prompt is too long: 210000 tokens > 200000').kind).toBe('context_full')
     expect(claudeFailure('something_new', undefined)).toEqual({ kind: 'error' })
+  })
+
+  it('keeps the name of a window it has no word for, and reads each window once', () => {
+    const resetsAt = '2026-11-13T14:00:00.000Z'
+    expect(
+      claudeWindows([
+        { kind: 'five_hour', percentUsed: 23, resetsAt },
+        { kind: 'spend_limit', percentUsed: 104 },
+        { kind: 'five_hour', percentUsed: 24, resetsAt },
+        { kind: 'Some Thing!', percentUsed: 5 },
+      ]),
+    ).toEqual([
+      { kind: 'five_hour', percent: 23, resetsAt: Date.parse(resetsAt) },
+      { kind: 'other', name: 'spend_limit', percent: 100, resetsAt: null },
+      { kind: 'other', percent: 5, resetsAt: null },
+    ])
   })
 
   it('key order does not matter', () => {
@@ -503,6 +534,76 @@ describe('Core', () => {
     expect(got).toHaveLength(2)
   })
 
+  it("passes the account's rate limits on sealed, and the session's context and cost (recorded usage)", async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    claude.onUsage(SID, RECORDED_USAGE)
+    await core.flushed()
+    const msg = of('usage').at(-1)!
+    expect(await open(key, msg.sealed, bind.usage(SOURCE))).toEqual({
+      claude: {
+        at: msg.at,
+        windows: [
+          { kind: 'five_hour', percent: 23, resetsAt: Date.parse('2026-11-13T14:00:00.000Z') },
+          { kind: 'seven_day', percent: 54, resetsAt: Date.parse('2026-11-16T11:00:00.000Z') },
+        ],
+      },
+    })
+    await expect(open(key, msg.sealed, bind.usage('another-source'))).rejects.toThrow()
+    const info = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
+    expect(info.usage).toEqual({ contextPercent: 4, costUsd: 0.00427476 })
+    // Figures aren't conversation: the phone dates the latest message by `updatedAt`, and refetches when it moves.
+    expect(lastSession().updatedAt).toBe(core.sessions.get(SID)!.stateSince)
+
+    // Every reconnect re-sends the limits after the snapshot, so a report made while offline still arrives.
+    const [, again] = (await core.snapshot()) as [unknown, Extract<SourceMessage, { t: 'usage' }>]
+    expect(await open(key, again.sealed, bind.usage(SOURCE))).toEqual(await open(key, msg.sealed, bind.usage(SOURCE)))
+
+    // The same figures again: nothing new to send.
+    const n = of('usage').length
+    claude.onUsage(SID, RECORDED_USAGE)
+    await core.flushed()
+    expect(of('usage')).toHaveLength(n)
+  })
+
+  it('pushes once when a window crosses 90%, never on first sight, and not at all when turned off', async () => {
+    const w = (percent: number) => [{ kind: 'five_hour' as const, percent, resetsAt: Date.now() + 80 * 60_000 }]
+    const { core } = await makeCore()
+    core.setUsage('claude', w(95)) // first sight: already past the line, stays quiet
+    core.setUsage('claude', w(60))
+    core.setUsage('claude', w(91))
+    core.setUsage('claude', w(89))
+    core.setUsage('claude', w(93)) // the same window again: already pushed
+    await core.flushed()
+    const pushes = of('push')
+    expect(pushes).toHaveLength(1)
+    const push = pushes[0]!.push
+    expect(push).toMatchObject({ kind: 'limit', tag: 'limit:claude:five_hour', urgency: 'normal', actions: false })
+    expect(await open<PushInfo>(key, push.sealed, bind.push(SOURCE, push))).toEqual({
+      title: 'Claude’s 5-hour limit is at 91%',
+      body: 'It resets in 1h 20m.',
+    })
+
+    // Its reset time jitters across the half hour: still the same window, still pushed once.
+    const at = Math.floor(Date.now() / 3_600_000) * 3_600_000 + 5 * 3_600_000 + 30 * 60_000
+    const jit = (percent: number, d: number) => [{ kind: 'seven_day' as const, percent, resetsAt: at + d }]
+    core.setUsage('codex', jit(50, -1000))
+    core.setUsage('codex', jit(90, -1000))
+    core.setUsage('codex', jit(85, 1000))
+    core.setUsage('codex', jit(92, 1000))
+    // The next week's window is a new one: it may push again.
+    core.setUsage('codex', jit(10, 7 * 86_400_000))
+    core.setUsage('codex', jit(95, 7 * 86_400_000))
+    await core.flushed()
+    expect(of('push').filter((p) => p.push.tag === 'limit:codex:seven_day')).toHaveLength(2)
+
+    const off = await makeCore({ limitPercent: 0 })
+    off.core.setUsage('codex', w(10))
+    off.core.setUsage('codex', w(99))
+    await off.core.flushed()
+    expect(of('push')).toHaveLength(0)
+  })
+
   it('restores sessions after a restart without their dead held requests', async () => {
     const { core, claude } = await makeCore()
     await claude.onHook(byEvent('UserPromptSubmit'))
@@ -513,8 +614,9 @@ describe('Core', () => {
     const next = await makeCore()
     next.core.restoreSessions(saved)
     expect(next.core.sessions.get(SID)).toMatchObject({ state: 'working', openRequests: [] })
-    const snap = (await next.core.snapshot()) as Extract<SourceMessage, { t: 'snapshot' }>
+    const [snap, ...rest] = (await next.core.snapshot()) as [Extract<SourceMessage, { t: 'snapshot' }>]
     expect(snap.sessions.map((s) => s.id)).toEqual([SID])
+    expect(rest).toEqual([]) // no usage known yet
     expect(snap.requests).toEqual([])
     core.stop()
   })

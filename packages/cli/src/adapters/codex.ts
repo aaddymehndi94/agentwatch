@@ -19,6 +19,7 @@ import {
   type Question,
   type RequestInfo,
   readPrompt,
+  type UsageWindow,
 } from '@agentwatch/protocol'
 import WebSocket from 'ws'
 import type { AgentAdapter, Core, Delivery, HeldRequest } from '../daemon/core.ts'
@@ -136,6 +137,11 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  private onRateLimits(raw: unknown): void {
+    const windows = codexWindows(raw)
+    if (windows.length) this.core.setUsage('codex', windows)
+  }
+
   // ── Connection ───────────────────────────────────────────────────────────────────────────────────────────────────
 
   private async loop(): Promise<void> {
@@ -209,6 +215,10 @@ export class CodexAdapter implements AgentAdapter {
       this.o.onDescribe?.()
     }
     this.o.log('info', 'codex connected', { version: v })
+    // The account's rate limits now; `account/rateLimits/updated` keeps them fresh after each turn.
+    this.call('account/rateLimits/read', {})
+      .then((r) => this.onRateLimits((r as Json | null)?.rateLimits))
+      .catch(() => {})
     this.pollTimer = setInterval(() => void this.poll(), this.o.pollMs ?? 2000)
     this.pollTimer.unref()
     void this.poll()
@@ -435,6 +445,18 @@ export class CodexAdapter implements AgentAdapter {
         } else if (status.type === 'notLoaded') this.endThread(t)
         return
       }
+      case 'account/rateLimits/updated':
+        this.onRateLimits(params.rateLimits)
+        return
+      case 'thread/tokenUsage/updated': {
+        if (!t) return
+        const usage = (params.tokenUsage ?? {}) as Json
+        const last = (usage.last ?? {}) as Json
+        const window = usage.modelContextWindow
+        if (typeof last.totalTokens === 'number' && typeof window === 'number' && window > 0)
+          this.core.setSessionUsage(t.id, { contextPercent: Math.min(100, (100 * last.totalTokens) / window) })
+        return
+      }
       case 'thread/closed': {
         if (t) this.endThread(t)
         return
@@ -656,6 +678,32 @@ export function codexTuiAlive(cwd: string, procDir = '/proc'): boolean | null {
     } catch {}
   }
   return false
+}
+
+/**
+ * `account/rateLimits/*`'s `rateLimits`: `primary` and `secondary` windows of `{usedPercent, windowDurationMins,
+ * resetsAt}`, with `resetsAt` in Unix seconds (Claude's is ISO).
+ */
+export function codexWindows(raw: unknown): UsageWindow[] {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Json
+  const out: UsageWindow[] = []
+  for (const [slot, w] of [
+    ['primary', r.primary],
+    ['secondary', r.secondary],
+  ] as const) {
+    if (!w || typeof w !== 'object') continue
+    const { usedPercent, windowDurationMins: mins, resetsAt } = w as Json
+    if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent)) continue
+    const minutes = typeof mins === 'number' && mins > 0 ? Math.round(mins) : undefined
+    out.push({
+      kind: minutes === 300 ? 'five_hour' : minutes === 10_080 ? 'seven_day' : 'other',
+      ...(minutes && minutes !== 300 && minutes !== 10_080 ? { minutes } : {}),
+      ...(minutes ? {} : { name: slot }),
+      percent: Math.min(100, Math.max(0, usedPercent)),
+      resetsAt: typeof resetsAt === 'number' && resetsAt > 0 ? resetsAt * 1000 : null,
+    })
+  }
+  return out
 }
 
 const CODEX_FAILURE: Record<string, FailureKind> = {

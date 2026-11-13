@@ -163,6 +163,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
     allowMessages: cfg.allowMessages,
     doneMinSeconds: cfg.notify.doneMinSeconds,
     needsYouDelayMs: cfg.notify.needsYouDelaySeconds * 1000,
+    limitPercent: cfg.notify.limitPercent,
     send: (m: SourceMessage) => relay.send(m),
     log,
     startedAt,
@@ -309,6 +310,13 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
         })
         .parse(body ?? {})
       return { status: claude.bridge.ack(a.session, a.id, a.ok, a.error, a.queued) ? 200 : 404, body: {} }
+    }
+    if (path === '/v1/bridge/claude/usage' && method === 'POST') {
+      // The mod's `$.session.usage()`: the account's rate limits, and this session's context fill and cost.
+      const a = z.object({ session: z.string().min(1), usage: z.unknown() }).safeParse(body ?? {})
+      if (!a.success) return { status: 400, body: { error: 'session and usage are required' } }
+      claude.onUsage(a.data.session, a.data.usage)
+      return { status: 200, body: {} }
     }
     if (method === 'POST' && path === '/v1/emit') {
       const a = EmitArgs.safeParse(body ?? {})

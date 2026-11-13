@@ -3,6 +3,7 @@
 
 import type {
   AgentKind,
+  AgentUsage,
   Capabilities,
   EventInfo,
   RequestInfo,
@@ -12,6 +13,8 @@ import type {
   SessionState,
   SourceView,
   StateView,
+  UsageInfo,
+  UsageWindow,
 } from '@agentwatch/protocol'
 import { bind, importVaultKey, isYourPrompt, open } from '@agentwatch/protocol/lite'
 
@@ -57,6 +60,8 @@ export interface Model {
   skew: number
   mute: number | null
   sources: SourceView[]
+  /** Each computer's rate limits, by source id (absent until its daemon reports them). */
+  usage: Record<string, UsageInfo>
   sessions: SessionVM[]
   requests: RequestVM[]
 }
@@ -118,14 +123,55 @@ export async function decryptState(raw: StateView, key: CryptoKey): Promise<Mode
       seq: i + 1,
     })),
   )
+  const usage: Record<string, UsageInfo> = {}
+  for (const src of raw.sources) {
+    const u = src.usage ? await tryOpen<UsageInfo>(key, src.usage.sealed, bind.usage(src.id)) : null
+    if (u) usage[src.id] = u
+  }
   return {
     serverTime: raw.serverTime,
     skew: raw.serverTime - Date.now(),
     mute: raw.mute,
     sources: raw.sources,
+    usage,
     sessions,
     requests,
   }
+}
+
+/** "5-hour", "Weekly", or the window's length for one we don't name. */
+
+/** A report without a reset time is trusted this long; one from a computer that went quiet days ago isn't. */
+const UNDATED_FRESH_MS = 6 * 3600_000
+
+/** An agent's windows that still hold: not reset yet (or, with no reset time, from a recent report). */
+export function liveWindows(u: AgentUsage | undefined, now: number): UsageWindow[] {
+  if (!u) return []
+  return u.windows.filter((w) => (w.resetsAt === null ? now - u.at < UNDATED_FRESH_MS : w.resetsAt > now))
+}
+
+/** How a limit reads: calm below 80%, warm from 80%, bad from 90% (where the push fires by default). */
+export function limitLevel(percent: number): 'calm' | 'warm' | 'bad' {
+  return percent >= 90 ? 'bad' : percent >= 80 ? 'warm' : 'calm'
+}
+
+export interface HotWindow {
+  sourceId: string
+  agent: 'claude' | 'codex'
+  window: UsageWindow
+}
+
+/** The fullest rate-limit window across every computer at `min` percent or more, for the inbox's one quiet line. */
+export function hottestWindow(usage: Record<string, UsageInfo>, now: number, min = 80): HotWindow | null {
+  let best: HotWindow | null = null
+  for (const [sourceId, u] of Object.entries(usage)) {
+    for (const agent of ['claude', 'codex'] as const) {
+      for (const w of liveWindows(u[agent], now)) {
+        if (w.percent >= min && (!best || w.percent > best.window.percent)) best = { sourceId, agent, window: w }
+      }
+    }
+  }
+  return best
 }
 
 /** A session's timeline. Bound to the session the screen asked for, so the relay can't move events between sessions. */

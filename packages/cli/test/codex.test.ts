@@ -14,7 +14,7 @@ import {
 } from '@agentwatch/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type WebSocket, WebSocketServer } from 'ws'
-import { CodexAdapter, codexFailure, codexTuiAlive, unwrapShell } from '../src/adapters/codex.ts'
+import { CodexAdapter, codexFailure, codexTuiAlive, codexWindows, unwrapShell } from '../src/adapters/codex.ts'
 import { Core } from '../src/daemon/core.ts'
 import { CLI_DIR } from './harness.ts'
 
@@ -28,6 +28,15 @@ const fixture = fs
   .map((l) => JSON.parse(l) as Json)
 const recorded = (method: string, n = 0) => fixture.filter((m) => m.method === method && m.params)[n]!.params as Json
 const APPROVAL = recorded('item/commandExecution/requestApproval')
+/** `account/rateLimits/read`, recorded from codex-cli 0.166 (spike 00): `resetsAt` is in Unix seconds. */
+const RATE_LIMITS = (
+  fs
+    .readFileSync(path.join(CLI_DIR, 'test/fixtures/codex-0.166.0-steer-ratelimits.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l) as Json)
+    .find((m) => m.kind === 'rateLimits')!.r as Json
+).rateLimits as Json
 const THREAD = String(APPROVAL.threadId)
 const CWD = String(APPROVAL.cwd)
 
@@ -102,6 +111,9 @@ class FakeAppServer {
           },
         })
         this.onResume(ws)
+        return
+      case 'account/rateLimits/read':
+        reply({ rateLimits: RATE_LIMITS })
         return
       case 'turn/steer':
         if (!this.activeTurn) {
@@ -363,6 +375,37 @@ describe('Codex adapter', () => {
     })
     await waitFor('push', () => sent.find((m) => m.t === 'push'))
     expect(sent.find((m) => m.t === 'push')).toMatchObject({ push: { kind: 'failed', urgency: 'high' } })
+  })
+
+  it("reads the account's rate limits on connect and keeps them fresh; context fill per thread", async () => {
+    fake.resumeStatus = { type: 'idle' }
+    fake.onResume = () => {}
+    await waitFor('usage', () => sent.find((m) => m.t === 'usage'))
+    expect(codexWindows(RATE_LIMITS)).toEqual([
+      { kind: 'five_hour', percent: 0, resetsAt: 1794566615_000 },
+      { kind: 'seven_day', percent: 27, resetsAt: 1794892190_000 },
+    ])
+    // Without a duration the two windows still read as two.
+    expect(codexWindows({ primary: { usedPercent: 1 }, secondary: { usedPercent: 2 } })).toEqual([
+      { kind: 'other', name: 'primary', percent: 1, resetsAt: null },
+      { kind: 'other', name: 'secondary', percent: 2, resetsAt: null },
+    ])
+    await waitFor('idle thread', () => session()?.state === 'idle')
+    fake.notify('account/rateLimits/updated', {
+      rateLimits: { ...RATE_LIMITS, primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1794566616 } },
+    })
+    await waitFor('second usage', () => sent.filter((m) => m.t === 'usage').length === 2)
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: THREAD,
+      turnId: 't',
+      tokenUsage: {
+        total: { totalTokens: 90_000 },
+        last: { totalTokens: 64_000 },
+        modelContextWindow: 256_000,
+      },
+    })
+    await waitFor('context', () => session()?.info.usage)
+    expect(session()?.info.usage).toEqual({ contextPercent: 25 })
   })
 
   it('maps Codex error codes, plain and with data', () => {

@@ -125,6 +125,7 @@ What buzzes:
 | **Needs you** | An agent asks for permission or asks a question, and it isn't answered at the keyboard within 10 s. High priority. Android shows Approve and Deny on the notification. |
 | **Finished** | A turn that took 30 s or more ends. Not while the agent waits on its own background subagents: it buzzes once they're all back. |
 | **Stopped** | A turn ends on an error: a usage limit, overloaded servers, signed out, billing, a full context. High priority, however short the turn. |
+| **Limit** | A Claude or Codex usage limit (5-hour or weekly) reaches 90%, once per window. Set `notify.limitPercent` in `~/.config/agentwatch/config.json` to change it, or `0` to turn it off. Settings → Computers shows every limit and when it resets. |
 | **Offline** | A computer has been gone for 10 minutes while one of its agents was working or waiting on you (once per outage) |
 
 ## Your own scripts and agents

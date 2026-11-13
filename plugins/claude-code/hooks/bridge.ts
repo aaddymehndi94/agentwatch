@@ -1,7 +1,8 @@
-// AgentWatch phone replies. Long-polls this OS user's AgentWatch daemon over its unix socket and submits each reply
-// from your phone as your own prompt. While Claude works, Claude queues the reply as its next turn: this says so at
-// once (`queued`) rather than when the turn ends, and keeps polling. If AgentWatch isn't set up, or its daemon isn't
-// running, this backs off quietly and does nothing else.
+// AgentWatch phone replies and usage. Long-polls this OS user's AgentWatch daemon over its unix socket and submits each
+// reply from your phone as your own prompt. While Claude works, Claude queues the reply as its next turn: this says so
+// at once (`queued`) rather than when the turn ends, and keeps polling. After each turn (and every 5 minutes during a
+// long one) it reports `$.session.usage()`: rate limits, context fill and cost, for the meters on the phone. If
+// AgentWatch isn't set up, or its daemon isn't running, this backs off quietly and does nothing else.
 
 import type { EngineInterface, Register } from 'claude-code'
 
@@ -13,10 +14,29 @@ const QUEUED_AFTER_MS = 1_500
 /** Version 2 acks a reply that waits for the running turn as `queued`, so the daemon sends replies while busy. */
 const BRIDGE_VERSION = 2
 
+/** How often usage is reported while a turn runs, so a limit crossed mid-turn still reaches the phone. */
+const USAGE_EVERY_MS = 5 * 60_000
+
 /** One loop per Claude process; it follows the current session id, so /clear and resume keep working. */
 let running = false
+/** The daemon's socket once it passed the ownership check; usage goes nowhere else. */
+let trusted: string | null = null
+let turnRunning = false
+let lastUsage = 0
 
 export const register: Register = (on) => {
+  // The main loop's turns only: a subagent's turn carries its `agentId`.
+  on('turn.start', (_$, e, next) => {
+    if (e.agentId === undefined) turnRunning = true
+    return next(e)
+  })
+  on('turn.complete', ($, e, next) => {
+    if (e.agentId === undefined) {
+      turnRunning = false
+      void reportUsage($)
+    }
+    return next(e)
+  })
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     if (!running) {
@@ -63,6 +83,8 @@ async function bridge($: EngineInterface): Promise<void> {
     try {
       checked ||= await ours($, socket)
       if (!checked) throw new Error('no daemon of ours yet')
+      trusted = socket
+      if (turnRunning && (await $.clock.now()) - lastUsage >= USAGE_EVERY_MS) void reportUsage($)
       const r = await $.http.fetch(`${BASE}?session=${encodeURIComponent(session)}&loop=${loop}&v=${BRIDGE_VERSION}`, {
         socketPath: socket,
       })
@@ -82,9 +104,29 @@ async function bridge($: EngineInterface): Promise<void> {
       // The daemon isn't running (it starts on the next hook) or AgentWatch isn't set up for this user. Check the
       // socket again before trusting whatever answers there next.
       checked = false
+      trusted = null
     }
     await $.clock.sleep(backoff)
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
+  }
+}
+
+/** The status line's figures (free to read): the account's rate limits, and this session's context and cost. */
+async function reportUsage($: EngineInterface): Promise<void> {
+  const socket = trusted
+  if (!socket) return
+  try {
+    lastUsage = await $.clock.now()
+    const { context, rateLimits, cost } = await $.session.usage()
+    const session = await $.session.id()
+    await $.http.fetch(`${BASE}/usage`, {
+      method: 'POST',
+      socketPath: socket,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session, usage: { context, rateLimits, cost } }),
+    })
+  } catch {
+    // Usage is a nicety: never let it get in the way.
   }
 }
 

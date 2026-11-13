@@ -39,6 +39,11 @@ const MIGRATIONS: string[] = [
     detail TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
   );
   `,
+  // 2: each source's rate limits (sealed UsageInfo) as last reported
+  `
+  ALTER TABLE sources ADD COLUMN usage_sealed TEXT;
+  ALTER TABLE sources ADD COLUMN usage_at INTEGER;
+  `,
 ]
 
 export function migrate(sql: SqlStorage): void {

@@ -37,6 +37,8 @@ export const bind = {
     requestId: p.requestId,
     actions: p.actions === true,
   }),
+  /** A source's rate limits: bound to the source, so the relay can't show one computer's as another's. */
+  usage: (sourceId: string): Binding => ({ kind: 'usage', sourceId }),
   command: (c: Omit<CommandEnvelope, 'sealed'>): Binding => ({
     kind: 'command',
     commandId: c.commandId,

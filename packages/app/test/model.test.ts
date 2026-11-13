@@ -1,7 +1,15 @@
-import type { StateView } from '@agentwatch/protocol'
-import { bind, generateVaultKey, importVaultKey, seal } from '@agentwatch/protocol'
+import type { SourceView, StateView, UsageInfo } from '@agentwatch/protocol'
+import { bind, generateVaultKey, importVaultKey, seal, until, windowLabel } from '@agentwatch/protocol'
 import { describe, expect, it } from 'vitest'
-import { backgroundWork, decryptEvents, decryptState, splitBackgroundLabel } from '../src/lib/model.ts'
+import {
+  backgroundWork,
+  decryptEvents,
+  decryptState,
+  hottestWindow,
+  limitLevel,
+  liveWindows,
+  splitBackgroundLabel,
+} from '../src/lib/model.ts'
 
 async function state(key: CryptoKey, other: CryptoKey): Promise<StateView> {
   const now = Date.now()
@@ -139,5 +147,81 @@ describe('waiting on background work', () => {
     }
     const model = await decryptState(raw, key)
     expect(model.sessions.map((s) => s.background)).toEqual([2, 0])
+  })
+})
+
+describe('usage limits', () => {
+  const now = 1_800_000_000_000
+  const h = 3600_000
+  const computer = (id: string, usage?: SourceView['usage']): SourceView => ({
+    id,
+    host: 'laptop',
+    user: id,
+    privacy: 'full',
+    allowMessages: true,
+    online: true,
+    lastSeen: now,
+    daemonVersion: '0.1.0',
+    adapters: {},
+    ...(usage ? { usage } : {}),
+  })
+
+  it('opens each computer’s usage bound to that computer, and drops one moved to another', async () => {
+    const key = await importVaultKey(generateVaultKey())
+    const info: UsageInfo = {
+      claude: { at: now, windows: [{ kind: 'five_hour', percent: 84, resetsAt: now + h }] },
+    }
+    const raw: StateView = {
+      serverTime: now,
+      mute: null,
+      sources: [
+        computer('a', { sealed: await seal(key, info, bind.usage('a')), at: now }),
+        // Sealed for a, presented as b's.
+        computer('b', { sealed: await seal(key, info, bind.usage('a')), at: now }),
+        computer('c'),
+      ],
+      sessions: [],
+      requests: [],
+    }
+    const m = await decryptState(raw, key)
+    expect(m.usage).toEqual({ a: info })
+  })
+
+  it('picks the fullest live window at 80% or more, and forgets one that has reset', () => {
+    const usage: Record<string, UsageInfo> = {
+      a: {
+        claude: {
+          at: now,
+          windows: [
+            { kind: 'five_hour', percent: 97, resetsAt: now - 1 },
+            { kind: 'seven_day', percent: 82, resetsAt: now + 50 * h },
+          ],
+        },
+      },
+      b: { codex: { at: now, windows: [{ kind: 'five_hour', percent: 88, resetsAt: now + 2 * h }] } },
+    }
+    expect(liveWindows(usage.a!.claude, now).map((w) => w.kind)).toEqual(['seven_day'])
+    // No reset time: trusted while the report is recent, not from a computer that went quiet long ago.
+    const undated = { kind: 'five_hour' as const, percent: 91, resetsAt: null }
+    expect(liveWindows({ at: now - 3600_000, windows: [undated] }, now)).toHaveLength(1)
+    expect(liveWindows({ at: now - 7 * 3600_000, windows: [undated] }, now)).toEqual([])
+    expect(hottestWindow(usage, now)).toMatchObject({ sourceId: 'b', agent: 'codex', window: { percent: 88 } })
+    expect(hottestWindow(usage, now, 90)).toBeNull()
+  })
+
+  it('names windows and levels, and says how long until a reset', () => {
+    expect(windowLabel({ kind: 'five_hour', percent: 1, resetsAt: null })).toBe('5-hour')
+    expect(windowLabel({ kind: 'seven_day', percent: 1, resetsAt: null })).toBe('Weekly')
+    expect(windowLabel({ kind: 'other', minutes: 1440, percent: 1, resetsAt: null })).toBe('1-day')
+    expect(windowLabel({ kind: 'other', name: 'spend_limit', percent: 1, resetsAt: null })).toBe('Spend')
+    expect(windowLabel({ kind: 'other', percent: 1, resetsAt: null })).toBe('Other')
+    expect([79, 80, 89, 90].map(limitLevel)).toEqual(['calm', 'warm', 'warm', 'bad'])
+    expect([30_000, 12 * 60_000, 135 * 60_000, 3 * 24 * h, (76 * 60 + 10) * 60_000].map(until)).toEqual([
+      '1m',
+      '12m',
+      '2h 15m',
+      '3d',
+      '3d 4h',
+    ])
   })
 })

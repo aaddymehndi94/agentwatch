@@ -44,6 +44,7 @@ Under `summary` privacy the daemon seals only the project folder name and model.
 | `request` | `sourceId, sessionId, requestId, rk` (request kind) |
 | `event` | `sourceId, sessionId, at, ek` (event kind) |
 | `push` | `sourceId, tag, pk` (push kind)`, sessionId, requestId, actions` |
+| `usage` | `sourceId` |
 | `command` | `commandId, deviceId, sourceId, sessionId, requestId, ck` (command kind)`, ts, nonce` |
 | `pair` | `pairId` |
 
@@ -89,6 +90,7 @@ or waiting on you, every phone gets a single "offline" push.
 | `request.close` | `requestId, status, at` | `answered`, `answered_locally`, `expired`, `cancelled` |
 | `push` | `push {tag, kind, urgency, sessionId?, requestId?, actions, sealed}`, optional `rid` | The Hub sends it as Web Push. With a `rid` it acks whether any phone got it. |
 | `mute` | `until` | Owner-wide; `null` clears it |
+| `usage` | `sealed, at` | The source's rate limits (below), kept on the source and sent only when a figure moves a point or more, or a window resets |
 | `command.ack` | `commandId, status, detail?` | `applied` or `rejected` (with a reason the phone shows). Queued while offline. |
 | `pair.create` | `rid, pairId, kind, wrapped, expiresAt, meta?` | Acked |
 | `rotate` | `rid` | Acked; see Pairing above |
@@ -106,13 +108,21 @@ or waiting on you, every phone gets a single "offline" push.
 Pushes, timeline events and command acks made while the link is down are queued for up to 10 minutes. Everything
 else is state, and the next snapshot carries it.
 
+**Usage.** Rate limits belong to an account, not a session, so they travel per source. The sealed value is
+`{claude?, codex?}`, each `{windows[], at}`, where a window is `{kind: five_hour | seven_day | other, minutes?,
+percent, resetsAt}` (`resetsAt` in ms, or `null`). Claude's figures come from the plugin mod after each turn and
+every 5 minutes during one; Codex's from `account/rateLimits/read` on connect and `account/rateLimits/updated`. A
+session's own context fill and cost go in its sealed info as `usage: {contextPercent?, costUsd?}`. When a window
+crosses `notify.limitPercent` (default 90, `0` turns it off), the daemon pushes once per window per reset, kind
+`limit`, at normal urgency.
+
 ## Phone ↔ relay: HTTPS
 
 Every call carries `Authorization: Bearer <device token>`.
 
 | Call | What |
 | --- | --- |
-| `GET /api/state` | Sources (with `online`), sessions, open and recent requests, mute |
+| `GET /api/state` | Sources (with `online`, and their sealed `usage` if any), sessions, open and recent requests, mute |
 | `GET /api/sessions/:source/:session/events` | The last 50 timeline events, newest first |
 | `POST /api/commands` | A sealed command envelope. The answer is `{commandId, status}`, `202`. |
 | `GET /api/commands/:id` | `queued`, `sent`, `applied`, `rejected` (with `detail`) or `expired` |

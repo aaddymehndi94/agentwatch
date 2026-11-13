@@ -2,13 +2,15 @@
 // machine and OS user.
 
 import type { SourceView } from '@agentwatch/protocol'
-import { failureLabel } from '@agentwatch/protocol/lite'
+import { failureLabel, until, windowLabel } from '@agentwatch/protocol/lite'
 import { useState } from 'preact/hooks'
 import { api } from '../lib/api.ts'
 import { plainText } from '../lib/markdown.ts'
 import {
   agentLabel,
   backgroundWork,
+  hottestWindow,
+  limitLevel,
   type Model,
   projectName,
   type RequestVM,
@@ -134,7 +136,32 @@ function Status({ model, open, now }: { model: Model; open: RequestVM[]; now: nu
     <section class="status" aria-live="polite">
       <h1>{title}</h1>
       <p>{sub}</p>
+      <LimitLine model={model} now={now} />
     </section>
+  )
+}
+
+/** One quiet line once any usage limit is at 80% or more: the fullest one, and when it resets. */
+function LimitLine({ model, now }: { model: Model; now: number }) {
+  const hot = hottestWindow(model.usage, now)
+  if (!hot) return null
+  const { agent, sourceId, window: w } = hot
+  const pct = Math.round(Math.min(100, w.percent))
+  // Computers on one account report the same figures; name the computer only when another one says otherwise.
+  const elsewhere = model.sources
+    .filter((s) => s.id !== sourceId)
+    .flatMap((s) => model.usage[s.id]?.[agent]?.windows ?? [])
+    .some((o) => o.kind === w.kind && o.minutes === w.minutes && Math.abs(o.percent - w.percent) >= 2)
+  const where = elsewhere ? ` on ${sourceLabel(model.sources.find((s) => s.id === sourceId))}` : ''
+  const label = windowLabel(w)
+  return (
+    <p class="status-limit" data-level={limitLevel(pct)}>
+      <span class="dot" aria-hidden="true" />
+      <span>
+        {agentLabel(agent)}’s {label === 'Weekly' ? 'weekly' : label} limit{where} is at {pct}%
+        {w.resetsAt !== null && ` · resets in ${until(w.resetsAt - now)}`}
+      </span>
+    </p>
   )
 }
 

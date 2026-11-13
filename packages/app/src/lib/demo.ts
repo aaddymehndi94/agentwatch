@@ -10,7 +10,20 @@ const min = 60_000
 export type DemoVariant = 'full' | 'calm' | 'new' | 'offline'
 
 export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Model {
-  if (variant === 'new') return { serverTime: now, skew: 0, mute: null, sources: [], sessions: [], requests: [] }
+  if (variant === 'new')
+    return { serverTime: now, skew: 0, mute: null, sources: [], usage: {}, sessions: [], requests: [] }
+  const win = (kind: 'five_hour' | 'seven_day', percent: number, inMin: number) => ({
+    kind,
+    percent,
+    resetsAt: now + inMin * min,
+  })
+  const usage: Model['usage'] = {
+    'laptop-a': {
+      claude: { at: now - 2 * min, windows: [win('five_hour', 84, 72), win('seven_day', 46, 3 * 1440 + 240)] },
+      codex: { at: now - 9 * min, windows: [win('five_hour', 12, 180), win('seven_day', 27, 5 * 1440)] },
+    },
+    'laptop-b': { claude: { at: now - 5 * min, windows: [win('five_hour', 31, 150), win('seven_day', 18, 1440 * 6)] } },
+  }
   const sources: SourceView[] = [
     src('laptop-a', 'dev', 'laptop', 'full', true),
     src('laptop-b', 'dev-work', 'laptop', 'summary', true),
@@ -22,6 +35,7 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
       title: 'Migrate the billing webhooks to the queue',
       snippet: 'Running the migration against the local database before touching the handlers.',
       cwd: '/home/dev/src/api-server',
+      usage: { contextPercent: 43, costUsd: 1.27 },
     }),
     sess('laptop-a', 's2', 'codex', 'needs_you', now - 41 * min, {
       project: 'mobile-app',
@@ -34,6 +48,7 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
       snippet:
         'The first pass failed four pairs. I started two agents: one checks every pair, one drafts the dark neutrals. I’ll merge both when they’re back.',
       background: ['Agent · Explore: check contrast for every text/background pair', 'Agent · draft the dark neutrals'],
+      usage: { contextPercent: 61, costUsd: 3.84 },
     }),
     sess('laptop-a', 's4', 'claude', 'idle', now - 23 * min, {
       project: 'agentwatch',
@@ -104,9 +119,9 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
   ]
   if (variant === 'calm') {
     for (const s of sessions) if (s.state === 'needs_you') s.state = 'working'
-    return { serverTime: now, skew: 0, mute: null, sources, sessions, requests: [] }
+    return { serverTime: now, skew: 0, mute: null, sources, usage, sessions, requests: [] }
   }
-  return { serverTime: now, skew: 0, mute: null, sources, sessions, requests }
+  return { serverTime: now, skew: 0, mute: null, sources, usage, sessions, requests }
 }
 
 const README_DONE = `Done. The README now covers the whole path from zero to a paired phone.

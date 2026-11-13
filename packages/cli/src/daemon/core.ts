@@ -5,6 +5,7 @@
 import {
   type AgentEvent,
   type AgentKind,
+  agentName,
   bind,
   type Capabilities,
   type CommandBody,
@@ -18,6 +19,7 @@ import {
   MESSAGE_MAX,
   newSession,
   type Privacy,
+  type PushInfo,
   type RequestInfo,
   type RequestKind,
   type RequestStatus,
@@ -30,7 +32,12 @@ import {
   type SourceMessage,
   seal,
   type Transition,
+  type UsageInfo,
+  type UsageWindow,
+  until,
   verifyCommand,
+  windowKey,
+  windowLabel,
 } from '@agentwatch/protocol'
 import type { Logger } from '../log.ts'
 
@@ -95,6 +102,8 @@ export interface CoreOptions {
   now?: () => number
   /** Called (often) after sessions change, so the daemon can persist them across restarts. */
   onChange?: () => void
+  /** Push once when a rate-limit window reaches this percent (0: never). */
+  limitPercent?: number
 }
 
 const ENDED_KEEP_MS = 60 * 60_000
@@ -110,6 +119,11 @@ export class Core {
   private acks = new Map<string, { status: CommandStatus; detail?: string; at: number } | null>()
   private pushTimers = new Map<string, NodeJS.Timeout>()
   private chain: Promise<void> = Promise.resolve()
+  /** Each agent's account rate limits, as last reported. */
+  private usage: UsageInfo = {}
+  /** Windows already pushed about, so each crossing buzzes once. */
+  /** Per agent and window, the reset time of the window last pushed about: one push per window. */
+  private limitPushed = new Map<string, number | null>()
   private pruneTimer: NodeJS.Timeout
 
   constructor(private o: CoreOptions) {
@@ -314,6 +328,74 @@ export class Core {
     )
   }
 
+  // ── Usage ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * An agent's account rate limits, as it just reported them. Passed on (sealed) when a figure moved by a point or a
+   * window reset. A window that crosses `limitPercent` pushes once.
+   */
+  setUsage(agent: 'claude' | 'codex', windows: UsageWindow[]): void {
+    const prev = this.usage[agent]
+    const at = this.now()
+    this.usage = { ...this.usage, [agent]: { windows, at } }
+    if (!prev || usageMoved(prev.windows, windows)) {
+      const usage = this.usage
+      this.enqueue(async () => ({ t: 'usage', sealed: await seal(this.o.key, usage, bind.usage(this.o.sourceId)), at }))
+    }
+    // Only a crossing we saw counts: a daemon that starts with a window already past the line stays quiet.
+    const limit = this.o.limitPercent ?? 90
+    if (!prev || limit <= 0) return
+    for (const w of windows) {
+      const before = prev.windows.find((p) => windowKey(p) === windowKey(w))
+      if (!before || before.percent >= limit || w.percent < limit) continue
+      // The same window, if its reset time is within the jitter of the one already pushed about.
+      const key = `${agent}:${windowKey(w)}`
+      const pushed = this.limitPushed.get(key)
+      if (pushed !== undefined && sameReset(pushed, w.resetsAt)) continue
+      this.limitPushed.set(key, w.resetsAt)
+      this.pushLimit(agent, w)
+    }
+  }
+
+  /** A session's context fill and cost, for its header on the phone. */
+  setSessionUsage(id: string, usage: { contextPercent?: number; costUsd?: number }): void {
+    const s = this.sessions.get(id)
+    if (!s) return
+    const was = s.info.usage
+    const pct = usage.contextPercent !== undefined ? Math.round(usage.contextPercent) : was?.contextPercent
+    const cost = usage.costUsd ?? was?.costUsd
+    if (pct === was?.contextPercent && cost === was?.costUsd) return
+    // Not an update to the conversation: `updatedAt` stays, so the phone neither refetches the timeline nor re-dates
+    // the agent's latest message.
+    const next: Session = {
+      ...s,
+      info: {
+        ...s.info,
+        usage: {
+          ...(pct !== undefined ? { contextPercent: pct } : {}),
+          ...(cost !== undefined ? { costUsd: cost } : {}),
+        },
+      },
+    }
+    this.sessions.set(id, next)
+    this.publishSession(next)
+  }
+
+  private pushLimit(agent: 'claude' | 'codex', w: UsageWindow): void {
+    const label = w.kind === 'seven_day' ? 'weekly' : windowLabel(w)
+    const left = w.resetsAt !== null ? w.resetsAt - this.now() : null
+    const info: PushInfo = {
+      title: `${agentName(agent)}’s ${label} limit is at ${Math.round(w.percent)}%`,
+      body: left !== null && left > 0 ? `It resets in ${until(left)}.` : 'It resets soon.',
+    }
+    const clear = { tag: `limit:${agent}:${windowKey(w)}`, kind: 'limit' as const, actions: false }
+    this.o.log('info', 'limit push', { agent, window: w.kind, percent: w.percent })
+    this.enqueue(async () => ({
+      t: 'push',
+      push: { ...clear, urgency: 'normal', sealed: await seal(this.o.key, info, bind.push(this.o.sourceId, clear)) },
+    }))
+  }
+
   private ack(commandId: string, status: CommandStatus, detail?: string): void {
     this.acks.set(commandId, { status, ...(detail ? { detail } : {}), at: this.now() })
     this.enqueue(async () => ({
@@ -436,6 +518,7 @@ export class Core {
       failure: info.failure
         ? { kind: info.failure.kind, ...(info.failure.detail ? { detail: clip(info.failure.detail, 500) } : {}) }
         : undefined,
+      usage: info.usage,
     }
   }
 
@@ -484,8 +567,12 @@ export class Core {
     }
   }
 
-  /** Full state, sent after every (re)connect. Goes through the queue so it is never older than what was sent. */
-  snapshot(): Promise<SourceMessage> {
+  /**
+   * Full state, sent after every (re)connect: sessions and requests, then the usage limits if any are known (sealed
+   * afresh, so a new key or a report made while offline still arrives). Goes through the queue so it is never older
+   * than what was sent.
+   */
+  snapshot(): Promise<SourceMessage[]> {
     return new Promise((resolve, reject) => {
       this.enqueue(async () => {
         try {
@@ -493,7 +580,14 @@ export class Core {
           const requests = await Promise.all(
             [...this.requests.values()].filter((r) => r.status === 'open').map((r) => this.requestWire(r)),
           )
-          resolve({ t: 'snapshot', sessions, requests })
+          const usage = this.usage
+          const at = Math.max(0, ...Object.values(usage).map((u) => u.at))
+          resolve([
+            { t: 'snapshot', sessions, requests },
+            ...(at
+              ? [{ t: 'usage' as const, sealed: await seal(this.o.key, usage, bind.usage(this.o.sourceId)), at }]
+              : []),
+          ])
         } catch (e) {
           reject(e)
         }
@@ -587,4 +681,21 @@ function alreadyClosed(status: RequestStatus): string {
     default:
       return 'This request is no longer open'
   }
+}
+
+/** A figure moved by a point, a window came or went, or one reset (its reset time jitters by a second or so). */
+function usageMoved(a: UsageWindow[], b: UsageWindow[]): boolean {
+  if (a.length !== b.length) return true
+  return b.some((w) => {
+    const p = a.find((x) => windowKey(x) === windowKey(w))
+    if (!p) return true
+    if (Math.abs(p.percent - w.percent) >= 1) return true
+    if ((p.resetsAt === null) !== (w.resetsAt === null)) return true
+    return p.resetsAt !== null && w.resetsAt !== null && Math.abs(p.resetsAt - w.resetsAt) > 60_000
+  })
+}
+
+/** Two reset times of one window: its reported reset jitters by a second or so between reports. */
+function sameReset(a: number | null, b: number | null): boolean {
+  return a === null || b === null ? a === b : Math.abs(a - b) <= 10 * 60_000
 }

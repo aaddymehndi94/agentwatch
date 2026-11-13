@@ -24,4 +24,5 @@ Terms used in code, docs and UI. When a term here conflicts with casual usage, t
 | **Privacy** | A per-source setting: `full` (sealed text is sent) or `summary` (no free text leaves the machine, only states and generic titles). |
 | **Notify policy** | The daemon's rules for which state changes become pushes: `needs_you` always, done only for turns ≥ 30 s, start/end never. |
 | **Mute** | An owner-wide relay flag that suppresses pushes until a time. |
+| **Usage limit** | An agent account's rate-limit window (Claude's or Codex's 5-hour and weekly), as a percent used and when it resets. Kept per source, since it belongs to the account, not a session. Pushed once per window when it crosses `notify.limitPercent` (90). |
 | **Offline** | A source whose WebSocket has been gone ≥ 10 min while it had active sessions. Pushed once. |

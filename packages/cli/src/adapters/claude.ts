@@ -13,6 +13,8 @@ import {
   type Question,
   type RequestInfo,
   readPrompt,
+  type UsageWindow,
+  windowKey,
 } from '@agentwatch/protocol'
 import type { AgentAdapter, Core, Outcome } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
@@ -64,6 +66,22 @@ export class ClaudeAdapter implements AgentAdapter {
 
   describe(): string {
     return this.seenVersion ? `claude ${this.seenVersion}` : 'claude'
+  }
+
+  /** What the mod read from `$.session.usage()`: the account's rate limits, and the session's context and cost. */
+  onUsage(sessionId: string, raw: unknown): void {
+    if (!isRecord(raw)) return
+    const windows = claudeWindows(raw.rateLimits)
+    if (windows.length) this.core.setUsage('claude', windows)
+    const context = isRecord(raw.context) ? raw.context : {}
+    const cost = isRecord(raw.cost) ? raw.cost : {}
+    const pct = num(context.percent)
+    const usd = num(cost.usd)
+    if (this.core.sessions.has(sessionId) && (pct !== undefined || usd !== undefined))
+      this.core.setSessionUsage(sessionId, {
+        ...(pct !== undefined ? { contextPercent: Math.min(100, Math.max(0, pct)) } : {}),
+        ...(usd !== undefined && usd >= 0 ? { costUsd: usd } : {}),
+      })
   }
 
   /**
@@ -213,6 +231,32 @@ export function backgroundLabels(raw: unknown): string[] {
     })
 }
 
+/** `$.session.usage().rateLimits`: `[{kind: 'five_hour' | 'seven_day', percentUsed, resetsAt (ISO)}]`. */
+export function claudeWindows(raw: unknown): UsageWindow[] {
+  if (!Array.isArray(raw)) return []
+  return (
+    raw
+      .filter(isRecord)
+      .map((w): UsageWindow | null => {
+        const percent = num(w.percentUsed)
+        if (percent === undefined) return null
+        const named = w.kind === 'five_hour' || w.kind === 'seven_day'
+        const name = !named && typeof w.kind === 'string' ? w.kind.toLowerCase().slice(0, 40) : ''
+        const resets = typeof w.resetsAt === 'string' ? Date.parse(w.resetsAt) : Number.NaN
+        return {
+          kind: named ? (w.kind as UsageWindow['kind']) : 'other',
+          ...(/^[a-z0-9_-]+$/.test(name) ? { name } : {}),
+          percent: Math.min(100, Math.max(0, percent)),
+          resetsAt: Number.isFinite(resets) ? resets : null,
+        }
+      })
+      .filter((w): w is UsageWindow => w !== null)
+      // One window per key: a second report of the same window would read as two.
+      .filter((w, i, all) => all.findIndex((o) => windowKey(o) === windowKey(w)) === i)
+      .slice(0, 8)
+  )
+}
+
 const CLAUDE_FAILURE: Record<string, FailureKind> = {
   rate_limit: 'usage_limit',
   billing_error: 'billing',
@@ -348,6 +392,10 @@ function parseQuestions(raw: unknown): Question[] | undefined {
     })
   }
   return out
+}
+
+function num(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
 function str(v: unknown): string | undefined {

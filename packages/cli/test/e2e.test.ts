@@ -403,6 +403,38 @@ describe('phone replies into Claude', () => {
     expect(s.caps.replyReason).toMatch(/AgentWatch plugin/)
   }, 30_000)
 
+  it("the mod's usage report reaches the phone: rate limits per computer, context and cost per session", async () => {
+    const usage = {
+      context: { tokens: 43_086, window: 1_000_000, percent: 4 },
+      rateLimits: [
+        { kind: 'five_hour', percentUsed: 23, resetsAt: '2026-11-13T14:00:00.000Z' },
+        { kind: 'seven_day', percentUsed: 54, resetsAt: '2026-11-16T11:00:00.000Z' },
+      ],
+      cost: { usd: 0.0043 },
+    }
+    const r = await call('POST', '/v1/bridge/claude/usage', { session: RID, usage }, { socket: socketOf(home) })
+    expect(r.status).toBe(200)
+    const source = await waitFor('usage on the relay', async () => {
+      const x = (await phone.state()).sources.find((y) => y.id === sourceId)
+      return x?.usage ? x : undefined
+    })
+    expect(await phone.open(source.usage!.sealed, bind.usage(sourceId))).toMatchObject({
+      claude: {
+        windows: [
+          { kind: 'five_hour', percent: 23, resetsAt: Date.parse('2026-11-13T14:00:00.000Z') },
+          { kind: 'seven_day', percent: 54, resetsAt: Date.parse('2026-11-16T11:00:00.000Z') },
+        ],
+      },
+    })
+    const s = await waitFor('session usage', async () => {
+      const x = await replySession()
+      if (!x?.sealed) return undefined
+      const info = await phone.open<SessionInfo>(x.sealed, bind.session(sourceId, RID))
+      return info.usage ? info : undefined
+    })
+    expect(s.usage).toEqual({ contextPercent: 4, costUsd: 0.0043 })
+  }, 60_000)
+
   it('a mod that can queue (v=2) takes a reply while Claude works, and the phone hears it was queued', async () => {
     const poll = call<{ messages: { id: string; text: string }[] }>(
       'GET',

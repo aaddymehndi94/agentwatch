@@ -56,6 +56,28 @@ export const Failure = z.object({
 })
 export type Failure = z.infer<typeof Failure>
 
+/** One rate-limit window of an account: Claude's and Codex's 5-hour and weekly limits. */
+export const UsageWindow = z.object({
+  kind: z.enum(['five_hour', 'seven_day', 'other']),
+  /** How long the window is, for one we don't name. */
+  minutes: z.number().int().positive().optional(),
+  /** The agent's own word for a window we don't name (`spend_limit`). */
+  name: z
+    .string()
+    .regex(/^[a-z0-9_-]{1,40}$/)
+    .optional(),
+  percent: z.number().min(0).max(100),
+  resetsAt: z.number().int().nullable(),
+})
+export type UsageWindow = z.infer<typeof UsageWindow>
+
+export const AgentUsage = z.object({ windows: z.array(UsageWindow).max(8), at: z.number().int() })
+export type AgentUsage = z.infer<typeof AgentUsage>
+
+/** A source's rate limits per agent (they belong to the account its OS user signed in with). Sealed. */
+export const UsageInfo = z.object({ claude: AgentUsage.optional(), codex: AgentUsage.optional() })
+export type UsageInfo = z.infer<typeof UsageInfo>
+
 export const SessionInfo = z.object({
   title: z.string().max(300).optional(),
   project: z.string().max(200).optional(),
@@ -66,6 +88,13 @@ export const SessionInfo = z.object({
   background: z.array(z.string().max(200)).max(20).optional(),
   /** The last turn stopped on an error; cleared when the next turn starts. */
   failure: Failure.optional(),
+  /** How full the context is, and what the session has cost so far (Claude only). */
+  usage: z
+    .object({
+      contextPercent: z.number().min(0).max(100).optional(),
+      costUsd: z.number().nonnegative().optional(),
+    })
+    .optional(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
@@ -137,7 +166,7 @@ export type RequestWire = z.infer<typeof RequestWire>
 export const EventWire = z.object({ sessionId: id, at: ts, kind: EventKind, sealed: z.string().optional() })
 export type EventWire = z.infer<typeof EventWire>
 
-export const PushKind = z.enum(['needs_you', 'done', 'failed', 'offline', 'test'])
+export const PushKind = z.enum(['needs_you', 'done', 'failed', 'limit', 'offline', 'test'])
 export type PushKind = z.infer<typeof PushKind>
 
 export const PushWire = z.object({
@@ -208,6 +237,8 @@ export const SourceMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('push'), push: PushWire, rid: id.optional() }),
   /** Owner-wide mute, settable from any source (`agentwatch mute`). */
   z.object({ t: z.literal('mute'), until: ts.nullable() }),
+  /** This source's rate limits (sealed UsageInfo, bound to the source). Sent when a figure moves. */
+  z.object({ t: z.literal('usage'), sealed: z.string().max(8000), at: ts }),
   z.object({
     t: z.literal('command.ack'),
     commandId: id,
@@ -258,6 +289,8 @@ export const SourceView = z.object({
   lastSeen: ts,
   daemonVersion: z.string(),
   adapters: z.record(z.string(), z.string()),
+  /** Sealed UsageInfo: the source's rate limits, as last reported. */
+  usage: z.object({ sealed: z.string(), at: ts }).optional(),
 })
 export type SourceView = z.infer<typeof SourceView>
 

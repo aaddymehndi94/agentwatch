@@ -106,7 +106,9 @@ async function describe(p: PushPayload): Promise<{ info: PushInfo; verified: boo
           ? 'An agent stopped'
           : p.kind === 'done'
             ? 'An agent finished'
-            : 'AgentWatch',
+            : p.kind === 'limit'
+              ? 'A usage limit is nearly used up'
+              : 'AgentWatch',
     body: 'Open AgentWatch to see details.',
   }
   if (!p.sealed) {

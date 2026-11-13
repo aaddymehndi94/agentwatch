@@ -39,8 +39,10 @@ export const Config = z.object({
       doneMinSeconds: z.number().int().min(0).default(30),
       /** Wait before pushing "needs you", so prompts answered at the keyboard don't buzz the phone. */
       needsYouDelaySeconds: z.number().int().min(0).default(10),
+      /** Push once when a Claude or Codex rate-limit window reaches this percent (0 turns it off). */
+      limitPercent: z.number().int().min(0).max(100).default(90),
     })
-    .default({ doneMinSeconds: 30, needsYouDelaySeconds: 10 }),
+    .default({ doneMinSeconds: 30, needsYouDelaySeconds: 10, limitPercent: 90 }),
   claude: z
     .object({
       enabled: z.boolean().default(true),

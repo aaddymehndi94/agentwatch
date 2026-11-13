@@ -406,6 +406,9 @@ export class Hub extends DurableObject<Env> {
       case 'mute':
         this.applyMute(msg.until)
         break
+      case 'usage':
+        this.sql.exec('UPDATE sources SET usage_sealed = ?, usage_at = ? WHERE id = ?', msg.sealed, msg.at, sourceId)
+        break
       case 'command.ack':
         this.sql.exec(
           'UPDATE commands SET status = ?, detail = ?, updated_at = ? WHERE id = ? AND source_id = ?',
@@ -635,8 +638,11 @@ export class Hub extends DurableObject<Env> {
         daemon_version: string
         adapters: string
         last_seen: number
+        usage_sealed: string | null
+        usage_at: number | null
       }>(
-        'SELECT id, host, user, privacy, allow_messages, daemon_version, adapters, last_seen FROM sources ORDER BY created_at',
+        `SELECT id, host, user, privacy, allow_messages, daemon_version, adapters, last_seen, usage_sealed, usage_at
+         FROM sources ORDER BY created_at`,
       )
       .toArray()
       .map((r) => ({
@@ -649,6 +655,7 @@ export class Hub extends DurableObject<Env> {
         lastSeen: Math.max(r.last_seen, this.lastPing(r.id)),
         daemonVersion: r.daemon_version,
         adapters: JSON.parse(r.adapters || '{}'),
+        ...(r.usage_sealed && r.usage_at ? { usage: { sealed: r.usage_sealed, at: r.usage_at } } : {}),
       }))
     const sessions: SessionView[] = this.sql
       .exec<{

@@ -9,6 +9,7 @@ import { type AppState, forgetDevice, refresh, setMuteLocal, setTheme, type Them
 import { ago, clock } from '../lib/time.ts'
 import { TopBar } from '../ui/bar.tsx'
 import { Laptop, Phone } from '../ui/icons.tsx'
+import { Meters } from '../ui/meters.tsx'
 
 declare const __APP_VERSION__: string
 
@@ -237,6 +238,7 @@ function Machines({ app, now }: { app: AppState; now: number }) {
               {Object.values(s.adapters).join(', ') || 'No agents yet'}
               {s.daemonVersion ? ` · agentwatch ${s.daemonVersion}` : ''}
             </span>
+            <Meters usage={app.model?.usage[s.id]} now={now + (app.model?.skew ?? 0)} />
           </span>
         </div>
       ))}
