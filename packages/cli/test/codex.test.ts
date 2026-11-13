@@ -37,6 +37,8 @@ class FakeAppServer {
   sockets = new Set<WebSocket>()
   loaded: string[] = [THREAD, 'no-rollout-yet']
   resumeStatus: Json = { type: 'active', activeFlags: ['waitingOnApproval'] }
+  /** The turn `turn/steer` accepts; any other (or none) fails as codex 0.166 does. */
+  activeTurn: string | null = null
   onResume: (ws: WebSocket) => void = () => {}
   private server: http.Server
   private wss: WebSocketServer
@@ -100,6 +102,13 @@ class FakeAppServer {
           },
         })
         this.onResume(ws)
+        return
+      case 'turn/steer':
+        if (!this.activeTurn) {
+          ws.send(JSON.stringify({ id: m.id, error: { code: -32600, message: 'no active turn to steer' } }))
+          return
+        }
+        reply({ turnId: this.activeTurn })
         return
       case 'turn/start':
       case 'thread/unsubscribe':
@@ -284,6 +293,48 @@ describe('Codex adapter', () => {
     expect(events.filter((k) => k === 'prompted')).toHaveLength(1)
   })
 
+  it('a phone reply to a running turn steers into it (codex 0.166), and says so', async () => {
+    fake.resumeStatus = { type: 'idle' }
+    fake.onResume = () => {}
+    await waitFor('idle thread', () => session()?.state === 'idle')
+    expect(session()?.caps).toEqual({ reply: true, busyReply: 'steer' })
+    const started = recorded('turn/started') as { turn: { id: string } }
+    fake.activeTurn = started.turn.id
+    fake.notify('turn/started', started)
+    await waitFor('working', () => session()?.state === 'working')
+    await command({ kind: 'message', text: 'Also add a test for it.' })
+    const steer = await waitFor('turn/steer', () => fake.calls('turn/steer')[0])
+    expect(steer.params).toEqual({
+      threadId: THREAD,
+      expectedTurnId: started.turn.id,
+      input: [{ type: 'text', text: 'Also add a test for it.', text_elements: [] }],
+    })
+    await waitFor('ack', () => sent.find((m) => m.t === 'command.ack'))
+    expect(sent.find((m) => m.t === 'command.ack')).toMatchObject({
+      status: 'applied',
+      detail: 'Sent into the running turn',
+    })
+    expect(fake.calls('turn/start')).toHaveLength(0)
+  })
+
+  it('a reply that just missed the turn starts a new one instead', async () => {
+    fake.resumeStatus = { type: 'idle' }
+    fake.onResume = () => {}
+    await waitFor('idle thread', () => session()?.state === 'idle')
+    // We saw the turn start, but it ended before the reply got there.
+    fake.notify('turn/started', recorded('turn/started'))
+    await waitFor('working', () => session()?.state === 'working')
+    await command({ kind: 'message', text: 'One more thing.' })
+    await waitFor('turn/start', () => fake.calls('turn/start')[0])
+    expect(fake.calls('turn/steer')).toHaveLength(1)
+    await waitFor('ack', () => sent.find((m) => m.t === 'command.ack'))
+    expect(sent.find((m) => m.t === 'command.ack')).toEqual({
+      t: 'command.ack',
+      commandId: expect.any(String),
+      status: 'applied',
+    })
+  })
+
   it('maps a request_user_input question to options, and the answer back to question ids', async () => {
     fake.onResume = () =>
       fake.send({
@@ -351,7 +402,7 @@ describe('Codex adapter', () => {
     await waitFor('expired', () => core.requests.get(req.id)?.status === 'expired')
     expect(session()?.caps).toMatchObject({ reply: false })
     await waitFor('rejoined', () => openRequest() && openRequest()!.id !== req.id, 8000)
-    expect(session()?.caps).toEqual({ reply: true })
+    expect(session()?.caps).toEqual({ reply: true, busyReply: 'steer' })
   }, 15_000)
 })
 

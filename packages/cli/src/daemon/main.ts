@@ -293,15 +293,22 @@ export async function startDaemon(opts: StartOptions = {}): Promise<DaemonHandle
       const session = query.get('session') ?? ''
       const loop = query.get('loop') ?? ''
       if (!session || !loop) return { status: 400, body: { error: 'session and loop are required' } }
-      const r = await claude.bridge.poll(session, loop, signal)
+      // v=2 mods ack a reply as queued while Claude works, so they can take one then.
+      const r = await claude.bridge.poll(session, loop, signal, { queues: Number(query.get('v') ?? '1') >= 2 })
       if (r === 'superseded') return { status: 410, body: { error: 'a newer bridge took over this session' } }
       return r.length ? { status: 200, body: { messages: r } } : { status: 204 }
     }
     if (path === '/v1/bridge/claude/ack' && method === 'POST') {
       const a = z
-        .object({ session: z.string(), id: z.string(), ok: z.boolean(), error: z.string().max(500).optional() })
+        .object({
+          session: z.string(),
+          id: z.string(),
+          ok: z.boolean(),
+          error: z.string().max(500).optional(),
+          queued: z.boolean().optional(),
+        })
         .parse(body ?? {})
-      return { status: claude.bridge.ack(a.session, a.id, a.ok, a.error) ? 200 : 404, body: {} }
+      return { status: claude.bridge.ack(a.session, a.id, a.ok, a.error, a.queued) ? 200 : 404, body: {} }
     }
     if (method === 'POST' && path === '/v1/emit') {
       const a = EmitArgs.safeParse(body ?? {})

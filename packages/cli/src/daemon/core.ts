@@ -42,10 +42,15 @@ export interface AgentAdapter {
   readonly agent: AgentKind
   /** Version string reported in hello, e.g. "claude 2.1.322" or "codex 0.166.0 (status-only)". */
   describe(): string
-  /** Deliver a free-text message to an idle session. */
-  message?(sessionId: string, text: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /**
+   * Deliver a free-text message. `busy` says the session is mid-turn; only adapters whose caps carry `busyReply` are
+   * handed one then. `how` says what happened to it: queued for the next turn, or steered into the running one.
+   */
+  message?(sessionId: string, text: string, o: { busy: boolean }): Promise<Delivery>
   stop?(): void
 }
+
+export type Delivery = { ok: true; how?: 'queued' | 'steered' } | { ok: false; reason: string }
 
 export interface OpenRequestArgs {
   agent: AgentKind
@@ -153,7 +158,11 @@ export class Core {
 
   setCaps(id: string, caps: Capabilities): void {
     const s = this.sessions.get(id)
-    if (!s || (s.caps.reply === caps.reply && s.caps.replyReason === caps.replyReason)) return
+    if (
+      !s ||
+      (s.caps.reply === caps.reply && s.caps.replyReason === caps.replyReason && s.caps.busyReply === caps.busyReply)
+    )
+      return
     const next = { ...s, caps, updatedAt: this.now() }
     this.sessions.set(id, next)
     this.publishSession(next)
@@ -283,13 +292,25 @@ export class Core {
     if (!this.o.allowMessages) return this.ack(env.commandId, 'rejected', 'Messages are turned off for this machine')
     const s = this.sessions.get(env.sessionId)
     if (!s || s.state === 'ended') return this.ack(env.commandId, 'rejected', 'Session has ended')
-    if (s.state !== 'idle') return this.ack(env.commandId, 'rejected', 'The agent is busy; try again when it is idle')
+    const busy = s.state !== 'idle'
+    if (busy && !s.caps.busyReply)
+      return this.ack(env.commandId, 'rejected', 'The agent is busy; try again when it is idle')
     const adapter = this.adapters.get(s.agent)
     if (!adapter?.message) return this.ack(env.commandId, 'rejected', 'This agent cannot take messages')
-    const r = await adapter.message(s.id, text)
+    const r = await adapter.message(s.id, text, { busy })
     if (!r.ok) return this.ack(env.commandId, 'rejected', r.reason)
-    this.publishEvent(s.id, 'replied', text)
-    this.ack(env.commandId, 'applied')
+    // A queued reply shows as queued until its turn starts; the phone matches it to that prompt.
+    this.publishEvent(s.id, r.how === 'queued' ? 'queued' : 'replied', text)
+    const who = s.agent === 'claude' ? 'Claude' : s.agent === 'codex' ? 'Codex' : 'the agent'
+    this.ack(
+      env.commandId,
+      'applied',
+      r.how === 'queued'
+        ? `Sends when ${who} finishes this turn`
+        : r.how === 'steered'
+          ? 'Sent into the running turn'
+          : undefined,
+    )
   }
 
   private ack(commandId: string, status: CommandStatus, detail?: string): void {
@@ -418,6 +439,7 @@ export class Core {
     if (!this.o.allowMessages) return { reply: false, replyReason: 'Messages are turned off for this machine' }
     if (s.state === 'ended') return { reply: false, replyReason: 'Session has ended' }
     if (!s.caps.reply) return s.caps
+    if (s.caps.busyReply) return { reply: true, busyReply: s.caps.busyReply }
     if (s.state !== 'idle') return { reply: false, replyReason: 'You can reply when the agent is idle' }
     return { reply: true }
   }

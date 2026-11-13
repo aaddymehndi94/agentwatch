@@ -41,6 +41,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   message(sessionId: string, text: string): Promise<Delivery> {
+    // Busy or not, the mod submits it: Claude runs it now, or queues it as the next turn and the mod says so.
     return this.bridge.send(sessionId, text)
   }
 
@@ -49,7 +50,14 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   private syncCaps(sid: string): void {
-    this.core.setCaps(sid, this.bridge.connected(sid) ? { reply: true } : { reply: false, replyReason: NOT_CONNECTED })
+    this.core.setCaps(
+      sid,
+      this.bridge.queues(sid)
+        ? { reply: true, busyReply: 'queue' }
+        : this.bridge.connected(sid)
+          ? { reply: true }
+          : { reply: false, replyReason: NOT_CONNECTED },
+    )
   }
 
   describe(): string {

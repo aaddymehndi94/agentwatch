@@ -1,8 +1,12 @@
 // Phone replies into Claude Code. The plugin's mod long-polls `GET /v1/bridge/claude` for its session over the daemon's
 // unix socket, submits each message with `$.prompt.submit({ text, asUser: true })` and acks it. A session counts as
-// connected for replies while its mod keeps polling. Core only hands us messages for idle sessions.
+// connected for replies while its mod keeps polling. A mod that polls with `v=2` can take a reply while Claude works:
+// Claude queues it as the next turn, and the mod acks `queued` at once instead of when the turn ends.
 
 import { randomId } from '@agentwatch/protocol'
+import type { Delivery } from '../daemon/core.ts'
+
+export type { Delivery }
 
 export const POLL_MS = 25_000
 /** A link with no poll for this long is gone (the mod polls again right after each answer). */
@@ -15,8 +19,6 @@ export interface BridgeMessage {
   text: string
 }
 
-export type Delivery = { ok: true } | { ok: false; reason: string }
-
 interface Waiting {
   msg: BridgeMessage
   done: (d: Delivery) => void
@@ -28,7 +30,10 @@ interface Link {
   loops: Set<string>
   poll: ((msgs: BridgeMessage[]) => void) | null
   lastPoll: number
+  /** The polling mod can queue a reply while Claude works (it acks `queued` instead of waiting for the turn). */
+  queues: boolean
   reported: boolean
+  reportedQueues: boolean
   queued: Waiting[]
   inFlight: Map<string, Waiting>
 }
@@ -57,14 +62,34 @@ export class ClaudeBridge {
     return !!l && (l.poll !== null || this.now() - l.lastPoll < STALE_MS)
   }
 
+  /** Whether this session's mod can take a reply while Claude works. Older mods can't. */
+  queues(sessionId: string): boolean {
+    return this.connected(sessionId) && !!this.links.get(sessionId)?.queues
+  }
+
   /**
    * One long-poll from a mod loop. Resolves with the messages to submit (empty when the poll timed out or the mod
    * went away), or `superseded` when a newer loop owns this session.
    */
-  poll(sessionId: string, loop: string, signal?: AbortSignal): Promise<BridgeMessage[] | 'superseded'> {
+  poll(
+    sessionId: string,
+    loop: string,
+    signal?: AbortSignal,
+    o: { queues?: boolean } = {},
+  ): Promise<BridgeMessage[] | 'superseded'> {
     let l = this.links.get(sessionId)
     if (!l) {
-      l = { loop, loops: new Set([loop]), poll: null, lastPoll: 0, reported: false, queued: [], inFlight: new Map() }
+      l = {
+        loop,
+        loops: new Set([loop]),
+        poll: null,
+        lastPoll: 0,
+        queues: false,
+        reported: false,
+        reportedQueues: false,
+        queued: [],
+        inFlight: new Map(),
+      }
       this.links.set(sessionId, l)
     } else if (l.loop !== loop) {
       if (l.loops.has(loop)) return Promise.resolve('superseded')
@@ -74,6 +99,7 @@ export class ClaudeBridge {
     }
     const link = l
     link.lastPoll = this.now()
+    link.queues = o.queues === true
     this.report(sessionId, link)
     if (link.queued.length) return Promise.resolve(this.take(link))
     return new Promise((resolve) => {
@@ -91,13 +117,18 @@ export class ClaudeBridge {
     })
   }
 
-  /** The mod's report that it submitted (or failed to submit) a message. */
-  ack(sessionId: string, id: string, ok: boolean, error?: string): boolean {
+  /**
+   * The mod's report that it submitted (or failed to submit) a message. `queued`: Claude is mid-turn and took it as
+   * its next prompt.
+   */
+  ack(sessionId: string, id: string, ok: boolean, error?: string, queued?: boolean): boolean {
     const w = this.links.get(sessionId)?.inFlight.get(id)
     if (!w) return false
     w.done(
       ok
-        ? { ok: true }
+        ? queued
+          ? { ok: true, how: 'queued' }
+          : { ok: true }
         : { ok: false, reason: error ? `Claude refused the message: ${error}` : 'Claude refused the message' },
     )
     return true
@@ -149,8 +180,9 @@ export class ClaudeBridge {
 
   private report(sessionId: string, l: Link): void {
     const now = this.connected(sessionId)
-    if (now === l.reported) return
+    if (now === l.reported && l.queues === l.reportedQueues) return
     l.reported = now
+    l.reportedQueues = l.queues
     this.o.onLink(sessionId, now)
   }
 

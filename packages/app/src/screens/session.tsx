@@ -1,7 +1,6 @@
 // One session as a conversation: your prompts, the agent's replies (rendered Markdown), what it asked for and how
 // that was answered, then anything still waiting on you and the reply composer.
 
-import { readPrompt } from '@agentwatch/protocol/lite'
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { getEvents } from '../lib/api.ts'
@@ -20,85 +19,12 @@ import {
   vaultKey,
 } from '../lib/model.ts'
 import { type AppState, sendCommand } from '../lib/store.ts'
+import { type Item, thread } from '../lib/thread.ts'
 import { ago, clock, duration } from '../lib/time.ts'
 import { TopBar } from '../ui/bar.tsx'
-import { Alert, Check, Offline, Phone, Reply, Send, Stop, Terminal } from '../ui/icons.tsx'
+import { Alert, Check, Clock, Offline, Phone, Reply, Send, Stop, Terminal } from '../ui/icons.tsx'
 import { Markdown } from '../ui/markdown.tsx'
 import { Ticket } from '../ui/ticket.tsx'
-
-type Item =
-  | { k: 'you'; at: number; text: string; phone: boolean }
-  | { k: 'agent'; at: number; text: string; latest: boolean }
-  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info' | 'msg'; label: string; text?: string }
-
-/** The timeline, oldest first, plus the latest message if the timeline doesn't already end with it. */
-function thread(events: EventVM[], s: SessionVM): Item[] {
-  const items: Item[] = []
-  for (const e of [...events].sort((a, b) => a.at - b.at)) {
-    switch (e.kind) {
-      case 'prompted': {
-        // Claude Code submits its own notices (background tasks, other agents) as prompts: a quiet line, not you.
-        const p = e.text ? readPrompt(e.text) : { from: 'you' as const, text: '' }
-        if (!p) break
-        items.push(
-          p.from === 'agent'
-            ? {
-                k: 'sys',
-                at: e.at,
-                icon: p.kind === 'task-done' ? 'ok' : p.kind === 'agent' || p.kind === 'auto' ? 'msg' : 'info',
-                label: p.label,
-                ...(p.detail ? { text: p.detail } : {}),
-              }
-            : p.text
-              ? { k: 'you', at: e.at, text: p.text, phone: false }
-              : { k: 'sys', at: e.at, icon: 'info', label: 'You sent a prompt' },
-        )
-        break
-      }
-      case 'replied':
-        items.push(
-          e.text
-            ? { k: 'you', at: e.at, text: e.text, phone: true }
-            : { k: 'sys', at: e.at, icon: 'info', label: 'You replied' },
-        )
-        break
-      case 'waiting':
-        // The turn ended but its background work is still out: the agent's words, if any, and nothing louder.
-        items.push(
-          e.text
-            ? { k: 'agent', at: e.at, text: e.text, latest: false }
-            : { k: 'sys', at: e.at, icon: 'info', label: 'Handed work to the background' },
-        )
-        break
-      case 'done':
-        items.push(
-          e.text
-            ? { k: 'agent', at: e.at, text: e.text, latest: false }
-            : { k: 'sys', at: e.at, icon: 'ok', label: 'Finished a turn' },
-        )
-        break
-      case 'needs_you':
-        items.push({ k: 'sys', at: e.at, icon: 'ask', label: 'Needed you', text: e.text })
-        break
-      case 'answered':
-        items.push({ k: 'sys', at: e.at, icon: 'ok', label: e.text ?? 'Answered' })
-        break
-      case 'ended':
-        items.push({ k: 'sys', at: e.at, icon: 'end', label: 'Session ended' })
-        break
-      default:
-        items.push({ k: 'sys', at: e.at, icon: 'info', label: e.kind })
-    }
-  }
-  const snippet = s.info?.snippet?.trim()
-  if (snippet) {
-    const lastAgent = [...items].reverse().find((i) => i.k === 'agent')
-    if (!lastAgent || lastAgent.text.trim() !== snippet) {
-      items.push({ k: 'agent', at: s.updatedAt, text: snippet, latest: s.state === 'working' })
-    }
-  }
-  return items
-}
 
 /** The live line under the thread: working, or waiting on background work (and on what, when the labels came). */
 function Working({ s, elapsed }: { s: SessionVM; elapsed: number | null }) {
@@ -250,16 +176,23 @@ export function SessionScreen(props: {
 function Message({ item, agent }: { item: Item; agent: string }): ComponentChildren {
   if (item.k === 'you') {
     return (
-      <div class="msg you">
+      <div class={`msg you${item.queued ? ' queued' : ''}`}>
         <div class="bubble">
           <Markdown text={item.text} />
         </div>
         <div class="msg-meta">
-          {item.phone && (
+          {item.queued ? (
             <>
-              <Phone /> From your phone
+              <Clock /> Queued for after this turn
               <span class="sep" aria-hidden="true" />
             </>
+          ) : (
+            item.phone && (
+              <>
+                <Phone /> From your phone
+                <span class="sep" aria-hidden="true" />
+              </>
+            )
           )}
           <time dateTime={new Date(item.at).toISOString()}>{clock(item.at)}</time>
         </div>
@@ -352,6 +285,9 @@ function Composer({ app, s, offline }: { app: AppState; s: SessionVM; offline: b
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`
   }, [text])
   if (s.state === 'ended') return null
+  // Mid-turn, a reply waits for the turn (Claude) or joins it (Codex). Waiting on subagents, Claude itself is idle.
+  const busy = (s.state === 'working' && s.background === 0) || s.state === 'needs_you'
+  const busyMode = busy ? s.caps.busyReply : undefined
   const why =
     offline && !pending
       ? 'Replies can’t reach this computer while it’s offline.'
@@ -380,7 +316,7 @@ function Composer({ app, s, offline }: { app: AppState; s: SessionVM; offline: b
   }
   return (
     <div class="composer">
-      {!text && (
+      {!text && !busyMode && (
         <ul class="quick" aria-label="Quick replies">
           {QUICK_REPLIES.map((q) => (
             <li key={q}>
@@ -406,7 +342,13 @@ function Composer({ app, s, offline }: { app: AppState; s: SessionVM; offline: b
           ref={box}
           rows={1}
           maxLength={8000}
-          placeholder={`Reply to ${agentLabel(s.agent)}…`}
+          placeholder={
+            busyMode === 'queue'
+              ? 'Queue a reply for after this turn…'
+              : busyMode === 'steer'
+                ? `Add to ${agentLabel(s.agent)}’s current turn…`
+                : `Reply to ${agentLabel(s.agent)}…`
+          }
           value={text}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -424,7 +366,7 @@ function Composer({ app, s, offline }: { app: AppState; s: SessionVM; offline: b
         >
           {pending.status === 'applied' ? (
             <>
-              <Check /> Delivered as your next prompt.
+              <Check /> {pending.detail ? `${pending.detail}.` : 'Delivered as your next prompt.'}
             </>
           ) : pending.status === 'rejected' || pending.status === 'failed' ? (
             <>

@@ -1,12 +1,17 @@
 // AgentWatch phone replies. Long-polls this OS user's AgentWatch daemon over its unix socket and submits each reply
-// from your phone as your own prompt. The daemon only sends replies while the session is idle. If AgentWatch isn't set
-// up, or its daemon isn't running, this backs off quietly and does nothing else.
+// from your phone as your own prompt. While Claude works, Claude queues the reply as its next turn: this says so at
+// once (`queued`) rather than when the turn ends, and keeps polling. If AgentWatch isn't set up, or its daemon isn't
+// running, this backs off quietly and does nothing else.
 
 import type { EngineInterface, Register } from 'claude-code'
 
 const BASE = 'http://agentwatchd/v1/bridge/claude'
 const MIN_BACKOFF_MS = 2_000
 const MAX_BACKOFF_MS = 60_000
+/** `submit` resolves when the prompt enters: at once when Claude is idle, after the turn when it's busy. */
+const QUEUED_AFTER_MS = 1_500
+/** Version 2 acks a reply that waits for the running turn as `queued`, so the daemon sends replies while busy. */
+const BRIDGE_VERSION = 2
 
 /** One loop per Claude process; it follows the current session id, so /clear and resume keep working. */
 let running = false
@@ -58,7 +63,7 @@ async function bridge($: EngineInterface): Promise<void> {
     try {
       checked ||= await ours($, socket)
       if (!checked) throw new Error('no daemon of ours yet')
-      const r = await $.http.fetch(`${BASE}?session=${encodeURIComponent(session)}&loop=${loop}`, {
+      const r = await $.http.fetch(`${BASE}?session=${encodeURIComponent(session)}&loop=${loop}&v=${BRIDGE_VERSION}`, {
         socketPath: socket,
       })
       // A reloaded copy of this plugin took over.
@@ -83,27 +88,39 @@ async function bridge($: EngineInterface): Promise<void> {
   }
 }
 
+type Outcome = { ok: boolean; error?: string }
+
 async function deliver(
   $: EngineInterface,
   socket: string,
   session: string,
   m: { id: string; text: string },
 ): Promise<void> {
-  let ok = false
-  let error: string | undefined
-  try {
-    const res = await $.prompt.submit({ text: m.text, asUser: true })
-    ok = !('drop' in res && res.drop !== undefined)
-    if (!ok) error = 'a hook dropped it'
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err)
-  }
+  const submitted: Promise<Outcome> = $.prompt.submit({ text: m.text, asUser: true }).then(
+    (res) => ('drop' in res && res.drop !== undefined ? { ok: false, error: 'a hook dropped it' } : { ok: true }),
+    (err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+  )
+  const early = await Promise.race([submitted, $.clock.sleep(QUEUED_AFTER_MS).then(() => null)])
+  if (early) return ack($, socket, { session, id: m.id, ...early })
+  // Claude is mid-turn and queued it. Say so now, and don't hold up the next poll for the rest of the turn.
+  await ack($, socket, { session, id: m.id, ok: true, queued: true })
+  void submitted.then((late) => (late.ok ? undefined : ack($, socket, { session, id: m.id, ...late })))
+}
+
+async function ack(
+  $: EngineInterface,
+  socket: string,
+  body: { session: string; id: string; ok: boolean; error?: string; queued?: boolean },
+): Promise<void> {
   await $.http
     .fetch(`${BASE}/ack`, {
       method: 'POST',
       socketPath: socket,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ session, id: m.id, ok, ...(error ? { error } : {}) }),
+      body: JSON.stringify(body),
     })
-    .catch(() => {})
+    .then(
+      () => undefined,
+      () => undefined,
+    )
 }

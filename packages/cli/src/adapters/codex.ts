@@ -1,6 +1,7 @@
 // Codex adapter: an extra client of this OS user's Codex app-server daemon, the shared background server the Codex TUI
 // talks to. It joins running threads, maps their status, turn and item events onto sessions, forwards approvals and
-// questions as Requests (the first answer wins, the TUI's or the phone's), and sends phone replies with `turn/start`.
+// questions as Requests (the first answer wins, the TUI's or the phone's), and sends phone replies: `turn/steer` into a
+// running turn, `turn/start` otherwise.
 // Protocol per spike S3 (codex-cli 0.166–0.167). Anything unexpected degrades to "status only", never to a crash, and
 // requests this adapter doesn't understand are left for the TUI to answer.
 
@@ -18,7 +19,7 @@ import {
   readPrompt,
 } from '@agentwatch/protocol'
 import WebSocket from 'ws'
-import type { AgentAdapter, Core, HeldRequest } from '../daemon/core.ts'
+import type { AgentAdapter, Core, Delivery, HeldRequest } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
 
 export interface CodexAdapterOptions {
@@ -47,6 +48,8 @@ interface Thread {
   lastMessage?: string
   turnPending: NodeJS.Timeout | null
   activeFallback: NodeJS.Timeout | null
+  /** The running turn, from `turn/started`: a phone reply steers into it. */
+  turnId?: string
   fileChanges: Map<string, { path: string; diff: string }[]>
   goneChecks: number
   /** Server requests that arrived while we were still joining (Codex replays pending approvals right after resume). */
@@ -102,11 +105,29 @@ export class CodexAdapter implements AgentAdapter {
 
   // ── Replies ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-  async message(sessionId: string, text: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async message(sessionId: string, text: string): Promise<Delivery> {
     const t = this.threads.get(sessionId)
     if (!this.connected || !t?.joined) return { ok: false, reason: 'AgentWatch is not connected to Codex right now' }
+    const input = [{ type: 'text', text, text_elements: [] }]
+    if (t.turnId) {
+      try {
+        await this.call('turn/steer', { threadId: sessionId, expectedTurnId: t.turnId, input })
+        return { ok: true, how: 'steered' }
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e)
+        // The turn ended just now: start one instead. Review and compaction turns can't be steered.
+        if (!/no active turn/i.test(why)) {
+          return {
+            ok: false,
+            reason: /review|compact|steer/i.test(why)
+              ? `Codex can't take a message during this turn: ${why}`
+              : `Codex refused the message: ${why}`,
+          }
+        }
+      }
+    }
     try {
-      await this.call('turn/start', { threadId: sessionId, input: [{ type: 'text', text, text_elements: [] }] })
+      await this.call('turn/start', { threadId: sessionId, input })
       return { ok: true }
     } catch (e) {
       return { ok: false, reason: `Codex refused the message: ${e instanceof Error ? e.message : String(e)}` }
@@ -317,7 +338,7 @@ export class CodexAdapter implements AgentAdapter {
     })
     const status = th.status as Json | undefined
     if (status?.type === 'active') this.core.apply('codex', t.id, { type: 'turn.start', at: Date.now() })
-    this.core.setCaps(t.id, { reply: true })
+    this.core.setCaps(t.id, { reply: true, busyReply: 'steer' })
     this.o.log('info', 'codex thread joined', { threadId: t.id })
     for (const [id, method, params] of t.early.splice(0)) this.onServerRequest(id, method, params)
   }
@@ -350,6 +371,8 @@ export class CodexAdapter implements AgentAdapter {
     switch (method) {
       case 'turn/started': {
         if (!t) return
+        const turn = (params.turn ?? {}) as Json
+        if (typeof turn.id === 'string') t.turnId = turn.id
         // Wait a moment for the user message, so the timeline shows what was asked.
         if (t.turnPending) clearTimeout(t.turnPending)
         t.turnPending = setTimeout(() => this.startTurn(t), 400)
@@ -386,6 +409,7 @@ export class CodexAdapter implements AgentAdapter {
       }
       case 'turn/completed': {
         if (!t) return
+        t.turnId = undefined
         this.endTurn(t)
         return
       }
@@ -402,8 +426,10 @@ export class CodexAdapter implements AgentAdapter {
               if (t.joined && !t.turnPending && (cur?.state === 'idle' || cur?.state === 'unknown'))
                 this.core.apply('codex', t.id, { type: 'turn.start', at: Date.now() })
             }, 1500)
-        } else if (status.type === 'idle' && s && (s.state === 'working' || s.state === 'needs_you')) this.endTurn(t)
-        else if (status.type === 'notLoaded') this.endThread(t)
+        } else if (status.type === 'idle' && s && (s.state === 'working' || s.state === 'needs_you')) {
+          t.turnId = undefined
+          this.endTurn(t)
+        } else if (status.type === 'notLoaded') this.endThread(t)
         return
       }
       case 'thread/closed': {

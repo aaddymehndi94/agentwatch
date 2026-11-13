@@ -11,6 +11,7 @@
     "build": "pnpm -r --filter ./packages/app --filter ./packages/cli run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:plugin": "claude plugin test plugins/claude-code",
     "typecheck": "pnpm -r run typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",

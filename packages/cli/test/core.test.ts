@@ -397,6 +397,54 @@ describe('Core', () => {
     expect(lastSession().caps).toEqual({ reply: false, replyReason: 'Messages are turned off for this machine' })
   })
 
+  it('a busy session takes a reply when its adapter can queue or steer it, and says which', async () => {
+    const got: [string, boolean][] = []
+    const fake: AgentAdapter = {
+      agent: 'generic',
+      describe: () => 'fake',
+      message: async (_id, text, o) => {
+        got.push([text, o.busy])
+        return o.busy ? { ok: true, how: 'queued' } : { ok: true }
+      },
+    }
+    const { core } = await makeCore()
+    core.register(fake)
+    core.apply('generic', SID, { type: 'turn.start', at: Date.now() })
+    core.setCaps(SID, { reply: true, busyReply: 'queue' })
+    await core.flushed()
+    expect(lastSession().caps).toEqual({ reply: true, busyReply: 'queue' })
+
+    await core.handleCommand(await command({ kind: 'message', text: 'and update the docs' }))
+    expect(got).toEqual([['and update the docs', true]])
+    expect(of('command.ack').at(-1)).toMatchObject({
+      status: 'applied',
+      detail: 'Sends when the agent finishes this turn',
+    })
+    await core.flushed()
+    const queued = of('event').at(-1)!.event
+    expect(queued.kind).toBe('queued')
+    expect(await open(key, queued.sealed!, bind.event(SOURCE, { ...queued, sessionId: SID }))).toEqual({
+      text: 'and update the docs',
+    })
+
+    // Idle, the same adapter just delivers it.
+    core.apply('generic', SID, { type: 'turn.end', at: Date.now() })
+    await core.handleCommand(await command({ kind: 'message', text: 'thanks' }))
+    expect(got.at(-1)).toEqual(['thanks', false])
+    expect(of('command.ack').at(-1)).toEqual({ t: 'command.ack', commandId: expect.any(String), status: 'applied' })
+    await core.flushed()
+    expect(of('event').at(-1)!.event.kind).toBe('replied')
+
+    // An adapter that can't queue still refuses a busy session.
+    core.setCaps(SID, { reply: true })
+    core.apply('generic', SID, { type: 'turn.start', at: Date.now() })
+    await core.flushed()
+    expect(lastSession().caps).toEqual({ reply: false, replyReason: 'You can reply when the agent is idle' })
+    await core.handleCommand(await command({ kind: 'message', text: 'too early' }))
+    expect(of('command.ack').at(-1)).toMatchObject({ status: 'rejected' })
+    expect(got).toHaveLength(2)
+  })
+
   it('restores sessions after a restart without their dead held requests', async () => {
     const { core, claude } = await makeCore()
     await claude.onHook(byEvent('UserPromptSubmit'))

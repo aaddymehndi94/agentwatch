@@ -1192,6 +1192,12 @@ pre,
   border-radius: 22px 22px 6px 22px;
   background: var(--user-bubble);
 }
+/* A reply that waits for the running turn: the bubble's outline, not yet its fill. */
+.msg.you.queued .bubble {
+  padding: 10px 15px;
+  background: transparent;
+  border: 1px dashed color-mix(in oklab, var(--text-3) 70%, transparent);
+}
 .msg-meta {
   display: inline-flex;
   align-items: center;

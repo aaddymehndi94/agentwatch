@@ -16,7 +16,7 @@ Terms used in code, docs and UI. When a term here conflicts with casual usage, t
 | **Turn** | One unit of agent work, from a user prompt until the agent stops. A turn's duration decides whether "done" pushes. |
 | **Request** | Something an agent is waiting on a human for: a `permission` (approve/deny an action) or a `question` (pick option(s)). Opened by an adapter; closed when answered anywhere, expired or abandoned. |
 | **Hold** | The Claude adapter keeps a `PermissionRequest` hook's connection open so the phone can answer. The terminal dialog stays live meanwhile, and the first answer wins. |
-| **Command** | What a device sends back: `decide` (allow/deny), `answer` (question answers) or `message` (free-text reply into an idle session). |
+| **Command** | What a device sends back: `decide` (allow/deny), `answer` (question answers) or `message` (free-text reply; mid-turn, Claude queues it and Codex steers it into the running turn). |
 | **Device** | A paired phone or browser. It holds a device token and the vault key in IndexedDB. |
 | **Vault key** | The owner's 256-bit AES-GCM key. Every sealed field and command uses it. It lives only on sources and devices. |
 | **Sealed** | Encrypted and authenticated with the vault key, with associated data binding it to its ids. |

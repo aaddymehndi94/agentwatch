@@ -402,6 +402,40 @@ describe('phone replies into Claude', () => {
     expect(s.caps.reply).toBe(false)
     expect(s.caps.replyReason).toMatch(/AgentWatch plugin/)
   }, 30_000)
+
+  it('a mod that can queue (v=2) takes a reply while Claude works, and the phone hears it was queued', async () => {
+    const poll = call<{ messages: { id: string; text: string }[] }>(
+      'GET',
+      `/v1/bridge/claude?session=${RID}&loop=loop-3&v=2`,
+      undefined,
+      { socket: socketOf(home), timeoutMs: 40_000 },
+    )
+    const s = await waitFor('busy reply capability', async () => {
+      const x = await replySession()
+      return x?.caps.busyReply === 'queue' ? x : undefined
+    })
+    expect(s.state).toBe('working')
+    expect(s.caps).toEqual({ reply: true, busyReply: 'queue' })
+    const cmd = await phone.command({
+      sourceId,
+      sessionId: RID,
+      body: { kind: 'message', text: 'and update the docs' },
+    })
+    const m = (await poll).body.messages[0]!
+    expect(m.text).toBe('and update the docs')
+    const ack = await call(
+      'POST',
+      '/v1/bridge/claude/ack',
+      { session: RID, id: m.id, ok: true, queued: true },
+      { socket: socketOf(home) },
+    )
+    expect(ack.status).toBe(200)
+    const st = await waitFor('applied', async () => {
+      const c = await phone.commandStatus(cmd)
+      return c.status === 'applied' ? c : undefined
+    })
+    expect(st.detail).toBe('Sends when Claude finishes this turn')
+  }, 60_000)
 })
 
 describe('notifications reach the phone, end-to-end encrypted', () => {

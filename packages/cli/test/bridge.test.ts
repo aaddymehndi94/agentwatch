@@ -42,6 +42,22 @@ describe('ClaudeBridge', () => {
     expect(await sent).toEqual({ ok: false, reason: 'Claude refused the message: a hook dropped it' })
   })
 
+  it('a mod that polls with v=2 can queue: its "queued" ack resolves the send at once', async () => {
+    void bridge.poll('s1', 'loopA')
+    expect(bridge.queues('s1')).toBe(false)
+    const poll = bridge.poll('s1', 'loopA', undefined, { queues: true })
+    expect(bridge.queues('s1')).toBe(true)
+    // The mod's capability changing is reported, so the session's caps follow it.
+    expect(links).toEqual([
+      ['s1', true],
+      ['s1', true],
+    ])
+    const sent = bridge.send('s1', 'and the docs')
+    const [m] = (await poll) as { id: string }[]
+    expect(bridge.ack('s1', m!.id, true, undefined, true)).toBe(true)
+    expect(await sent).toEqual({ ok: true, how: 'queued' })
+  })
+
   it('reports a failure when Claude takes a message but never confirms it', async () => {
     void bridge.poll('s1', 'loopA')
     const sent = bridge.send('s1', 'x')

@@ -50,6 +50,9 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
   ]
   for (const s of sessions) if (s.id === 's4') s.caps = { reply: true }
   for (const s of sessions) if (s.id === 's3') s.background = 2
+  // Claude queues a reply sent mid-turn; Codex steers it into the running turn.
+  for (const s of sessions) if (s.id === 's1' || s.id === 's3') s.caps = { reply: true, busyReply: 'queue' }
+  for (const s of sessions) if (s.id === 's2') s.caps = { reply: true, busyReply: 'steer' }
   const requests: RequestVM[] = [
     {
       sourceId: 'laptop-a',
@@ -173,6 +176,7 @@ export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
   }
   if (sessionId !== 's1') return []
   return [
+    { at: now - 1 * min, kind: 'queued', text: 'After the migration, log each webhook id the consumer skips.' },
     { at: now - 4 * min, kind: 'needs_you', text: 'pnpm --filter api-server db:migrate --env local' },
     { at: now - 9 * min, kind: 'answered', text: 'Approved from phone' },
     { at: now - 10 * min, kind: 'needs_you', text: 'Edit src/webhooks/billing.ts' },

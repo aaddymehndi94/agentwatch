@@ -27,7 +27,8 @@ const plugin = new URL('./dist/plugin/', import.meta.url)
 rmSync(plugin, { recursive: true, force: true })
 cpSync(new URL('../../plugins/claude-code/', import.meta.url), plugin, {
   recursive: true,
-  filter: (src) => !/[/\\](types|tsconfig\.json|node_modules)$/.test(src) || src.endsWith('claude-code'),
+  filter: (src) =>
+    !/[/\\](types|tsconfig\.json|node_modules|[^/\\]+\.test\.ts)$/.test(src) || src.endsWith('claude-code'),
 })
 const manifest = new URL('./.claude-plugin/plugin.json', plugin)
 writeFileSync(manifest, `${JSON.stringify({ ...JSON.parse(readFileSync(manifest, 'utf8')), version }, null, 2)}\n`)

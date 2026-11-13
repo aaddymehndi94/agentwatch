@@ -84,7 +84,7 @@ or waiting on you, every phone gets a single "offline" push.
 | `hello` | `v, host, user, privacy, allowMessages, daemonVersion, adapters` | First, on every connect. `host` and `user` are kept from the first hello only, so a source can't rename itself later |
 | `snapshot` | `sessions[], requests[]` | Right after `hello`. Open requests it doesn't list become `expired`, and missing sessions `ended`. |
 | `session` | `session` | Upsert: clear state plus `sealed` info |
-| `event` | `event {sessionId, at, kind, sealed?}` | Timeline: `prompted`, `needs_you`, `answered`, `done`, `ended`, `replied` |
+| `event` | `event {sessionId, at, kind, sealed?}` | Timeline: `prompted`, `needs_you`, `answered`, `done`, `waiting`, `ended`, `replied`, `queued` |
 | `request.open` | `request` | `kind`, `answerable`, and `sealed` info |
 | `request.close` | `requestId, status, at` | `answered`, `answered_locally`, `expired`, `cancelled` |
 | `push` | `push {tag, kind, urgency, sessionId?, requestId?, actions, sealed}`, optional `rid` | The Hub sends it as Web Push. With a `rid` it acks whether any phone got it. |
@@ -130,7 +130,7 @@ A command is `{commandId, deviceId, sourceId, sessionId, requestId?, kind, ts, n
 
 - `decide`: `{behavior: 'allow' | 'deny', message?}`
 - `answer`: `{answers: {<question>: <label>, …}}`, with several labels joined by `", "`
-- `message`: `{text}`, a reply into an idle session
+- `message`: `{text}`, a reply into the session
 
 The relay queues a command for an offline source for 5 minutes. On reconnect it resends both queued commands and sent
 ones that were never acked. The daemon answers a command id it has already seen with the same ack, so a resend is
@@ -142,7 +142,9 @@ never applied twice. It applies a new command only if every check passes:
 - the nonce is new;
 - the request is still open and answerable, and the command fits it: `decide` only for a permission, `answer` only
   for a question;
-- for `message`: this source allows messages, the session is idle, and its adapter can deliver.
+- for `message`: this source allows messages, and the session is idle or its adapter can take a reply mid-turn
+  (`caps.busyReply`: `queue`, Claude runs it as the next turn; `steer`, Codex adds it to the running turn). An
+  applied ack's `detail` says which ("Sends when Claude finishes this turn", "Sent into the running turn").
 
 Anything else is acked `rejected`, with a reason the phone shows.
 
