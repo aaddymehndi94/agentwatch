@@ -6,7 +6,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { install, MARKETPLACE, ownNodeCopy, PLUGIN_ID, pickNode, trustedBinary, uninstall } from '../src/install.ts'
+import {
+  install,
+  MARKETPLACE,
+  ownNodeCopy,
+  PLUGIN_ID,
+  pickNode,
+  type Runner,
+  trustedBinary,
+  uninstall,
+} from '../src/install.ts'
 import { privateGroup } from '../src/own.ts'
 import { paths } from '../src/paths.ts'
 import { VERSION } from '../src/version.ts'
@@ -231,10 +240,14 @@ describe('pickNode', () => {
   })
 
   it('falls back to the running Node when this user has nothing new enough and that Node is safe', () => {
+    // Not process.execPath: whether the test runner's own Node is safe, and what Node the system has, differ by
+    // machine (a CI runner's tool cache is writable by another account). A runner stub pins every other Node old.
     fakeNode(path.join(home, '.nvm/versions/node/v18.18.2/bin/node'), 'v18.18.2')
-    const node = pickNode(home, { PATH: '' }, process.execPath)
-    expect(node).not.toBeNull()
-    expect(execFileSync(node!, ['--version'], { encoding: 'utf8' })).toMatch(/^v(2[2-9]|[3-9]\d)\./)
+    const running = path.join(home, 'opt/node/bin/node')
+    fakeNode(running, 'v24.1.0')
+    const run: Runner = (cmd) => ({ code: 0, stdout: cmd === running ? 'v24.1.0\n' : 'v18.18.2\n', stderr: '' })
+    expect(pickNode(home, { PATH: '' }, running, run)).toBe(running)
+    expect(pickNode(home, { PATH: '' }, '/elsewhere/node', run)).toBeNull()
   })
 
   it('skips a Node that someone else could swap out', () => {
