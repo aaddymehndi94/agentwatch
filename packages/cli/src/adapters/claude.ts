@@ -2,7 +2,16 @@
 // can answer them. The terminal dialog stays live while a hook is held (spike S1); whichever side answers first wins,
 // and a local answer is recognised from the hooks that follow (PostToolUse, Stop, UserPromptSubmit, SessionEnd).
 
-import { clip, DETAIL_MAX, literal, projectFromCwd, type Question, type RequestInfo } from '@agentwatch/protocol'
+import {
+  clip,
+  DETAIL_MAX,
+  isYourPrompt,
+  literal,
+  projectFromCwd,
+  type Question,
+  type RequestInfo,
+  readPrompt,
+} from '@agentwatch/protocol'
 import type { AgentAdapter, Core, Outcome } from '../daemon/core.ts'
 import type { Logger } from '../log.ts'
 import { ClaudeBridge, type Delivery, NOT_CONNECTED } from './claude-bridge.ts'
@@ -73,10 +82,16 @@ export class ClaudeAdapter implements AgentAdapter {
       }
       case 'UserPromptSubmit': {
         this.releaseAll(sid)
-        const prompt = str(p.prompt)
-        this.core.apply('claude', sid, { type: 'turn.start', at: now }, { text: prompt })
-        if (!this.core.sessions.get(sid)?.info.title && prompt) {
-          this.core.apply('claude', sid, { type: 'info', at: now, info: { title: clip(prompt, 80) } })
+        // Claude Code also submits its own messages (background-task results, other agents' messages) as prompts.
+        // They still start a turn, but only what you typed titles the session; the phone draws the rest as quiet
+        // lines, and local command output isn't sent at all.
+        const raw = str(p.prompt)
+        const read = raw ? readPrompt(raw) : null
+        const text = read?.from === 'you' ? read.text : read ? raw : undefined
+        this.core.apply('claude', sid, { type: 'turn.start', at: now }, text !== undefined ? { text } : {})
+        const title = this.core.sessions.get(sid)?.info.title
+        if (read?.from === 'you' && !isYourPrompt(title)) {
+          this.core.apply('claude', sid, { type: 'info', at: now, info: { title: clip(read.text, 80) } })
         }
         return ''
       }

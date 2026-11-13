@@ -13,7 +13,7 @@ import type {
   SourceView,
   StateView,
 } from '@agentwatch/protocol'
-import { bind, importVaultKey, open } from '@agentwatch/protocol/lite'
+import { bind, importVaultKey, isYourPrompt, open } from '@agentwatch/protocol/lite'
 
 export interface SessionVM {
   key: string
@@ -97,7 +97,7 @@ export async function decryptState(raw: StateView, key: CryptoKey): Promise<Mode
       turnStartedAt: s.turnStartedAt,
       updatedAt: s.updatedAt,
       caps: s.caps,
-      info: await tryOpen<SessionInfo>(key, s.sealed, bind.session(s.sourceId, s.id)),
+      info: cleanInfo(await tryOpen<SessionInfo>(key, s.sealed, bind.session(s.sourceId, s.id))),
     })),
   )
   const ordered = [...raw.requests].sort((a, b) => a.createdAt - b.createdAt)
@@ -140,6 +140,13 @@ export async function decryptEvents(
         return { at: e.at, kind: e.kind, ...(info?.text ? { text: info.text } : {}) }
       }),
   )
+}
+
+/** Older daemons titled a session with whatever came first, including Claude Code's own background-task notices. */
+function cleanInfo(info: SessionInfo | null): SessionInfo | null {
+  if (!info?.title || isYourPrompt(info.title)) return info
+  const { title: _dropped, ...rest } = info
+  return rest
 }
 
 export function sourceLabel(s: SourceView | undefined): string {

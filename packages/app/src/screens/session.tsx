@@ -1,6 +1,7 @@
 // One session as a conversation: your prompts, the agent's replies (rendered Markdown), what it asked for and how
 // that was answered, then anything still waiting on you and the reply composer.
 
+import { readPrompt } from '@agentwatch/protocol/lite'
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { getEvents } from '../lib/api.ts'
@@ -19,26 +20,44 @@ import {
 import { type AppState, sendCommand } from '../lib/store.ts'
 import { ago, clock, duration } from '../lib/time.ts'
 import { TopBar } from '../ui/bar.tsx'
-import { Alert, Check, Offline, Phone, Send, Stop, Terminal } from '../ui/icons.tsx'
+import { Alert, Check, Offline, Phone, Reply, Send, Stop, Terminal } from '../ui/icons.tsx'
 import { Markdown } from '../ui/markdown.tsx'
 import { Ticket } from '../ui/ticket.tsx'
 
 type Item =
   | { k: 'you'; at: number; text: string; phone: boolean }
   | { k: 'agent'; at: number; text: string; latest: boolean }
-  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info'; label: string; text?: string }
+  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info' | 'msg'; label: string; text?: string }
 
 /** The timeline, oldest first, plus the latest message if the timeline doesn't already end with it. */
 function thread(events: EventVM[], s: SessionVM): Item[] {
   const items: Item[] = []
   for (const e of [...events].sort((a, b) => a.at - b.at)) {
     switch (e.kind) {
-      case 'prompted':
+      case 'prompted': {
+        // Claude Code submits its own notices (background tasks, other agents) as prompts: a quiet line, not you.
+        const p = e.text ? readPrompt(e.text) : { from: 'you' as const, text: '' }
+        if (!p) break
+        items.push(
+          p.from === 'agent'
+            ? {
+                k: 'sys',
+                at: e.at,
+                icon: p.kind === 'task-done' ? 'ok' : p.kind === 'agent' || p.kind === 'auto' ? 'msg' : 'info',
+                label: p.label,
+                ...(p.detail ? { text: p.detail } : {}),
+              }
+            : p.text
+              ? { k: 'you', at: e.at, text: p.text, phone: false }
+              : { k: 'sys', at: e.at, icon: 'info', label: 'You sent a prompt' },
+        )
+        break
+      }
       case 'replied':
         items.push(
           e.text
-            ? { k: 'you', at: e.at, text: e.text, phone: e.kind === 'replied' }
-            : { k: 'sys', at: e.at, icon: 'info', label: e.kind === 'replied' ? 'You replied' : 'You sent a prompt' },
+            ? { k: 'you', at: e.at, text: e.text, phone: true }
+            : { k: 'sys', at: e.at, icon: 'info', label: 'You replied' },
         )
         break
       case 'done':
@@ -236,6 +255,8 @@ function Message({ item, agent }: { item: Item; agent: string }): ComponentChild
           <Check />
         ) : item.icon === 'end' ? (
           <Stop />
+        ) : item.icon === 'msg' ? (
+          <Reply />
         ) : (
           <Alert />
         )}

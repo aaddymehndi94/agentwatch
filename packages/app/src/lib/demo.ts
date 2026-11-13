@@ -146,6 +146,11 @@ export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
   if (sessionId === 's3') {
     return [
       {
+        at: now - 3 * min,
+        kind: 'prompted',
+        text: '<task-notification>\n<task-id>b7f2</task-id>\n<status>completed</status>\n<summary>Background command "pnpm contrast-check" completed (exit code 0)</summary>\n</task-notification>',
+      },
+      {
         at: now - 7 * min,
         kind: 'prompted',
         text: 'Now generate the dark palette from `tokens/light.json`. Every text and background pair must pass **WCAG AA**.',

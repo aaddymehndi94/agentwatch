@@ -15,6 +15,7 @@ import {
   projectFromCwd,
   type Question,
   type RequestInfo,
+  readPrompt,
 } from '@agentwatch/protocol'
 import WebSocket from 'ws'
 import type { AgentAdapter, Core, HeldRequest } from '../daemon/core.ts'
@@ -435,7 +436,10 @@ export class CodexAdapter implements AgentAdapter {
     if (t.turnPending) clearTimeout(t.turnPending)
     t.turnPending = null
     t.lastMessage = undefined
-    this.core.apply('codex', t.id, { type: 'turn.start', at: Date.now() }, prompt ? { text: prompt } : {})
+    // Same rule as Claude: harness-made input (instruction envelopes and the like) never shows as your message.
+    const read = prompt ? readPrompt(prompt) : null
+    const text = read?.from === 'you' ? read.text : read ? prompt : undefined
+    this.core.apply('codex', t.id, { type: 'turn.start', at: Date.now() }, text !== undefined ? { text } : {})
   }
 
   private endTurn(t: Thread): void {
