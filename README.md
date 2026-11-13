@@ -167,4 +167,5 @@ screenshots with `pnpm --filter @agentwatch/app screenshots`. Read [CONTRIBUTING
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The bundled design skill in `.claude/skills/impeccable/` and the `.claude/agents/impeccable-*` agents
+come from [impeccable](https://github.com/pbakaus/impeccable) and are [Apache-2.0](.claude/skills/impeccable/LICENSE).
