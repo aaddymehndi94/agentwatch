@@ -110,7 +110,14 @@ export class ClaudeAdapter implements AgentAdapter {
       case 'StopFailure': {
         this.releaseAll(sid)
         const msg = str(p.last_assistant_message)
-        this.core.apply('claude', sid, { type: 'turn.end', at: now, ...(msg !== undefined ? { message: msg } : {}) })
+        // Subagents run in the background by default: a turn can end while they work. Then it isn't done.
+        const background = event === 'Stop' ? backgroundLabels(p.background_tasks) : []
+        this.core.apply('claude', sid, {
+          type: 'turn.end',
+          at: now,
+          ...(msg !== undefined ? { message: msg } : {}),
+          ...(background.length ? { background } : {}),
+        })
         return ''
       }
       case 'SessionEnd': {
@@ -156,6 +163,33 @@ export class ClaudeAdapter implements AgentAdapter {
   private releaseAll(sid: string, status: 'answered_locally' | 'cancelled' = 'answered_locally'): void {
     for (const r of this.core.openRequestsOf(sid)) this.core.close(r.id, status)
   }
+}
+
+/**
+ * The background work a turn waits on: subagents and workflows, which always come back and report. Background shells
+ * and monitors don't count: a dev server or a log watcher can run for hours, and the turn really is over.
+ */
+const WAITS_ON: Record<string, string> = { subagent: 'Agent', workflow: 'Workflow' }
+const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped', 'cancelled', 'error'])
+
+/**
+ * One short line per subagent or workflow still running in `Stop`'s `background_tasks`:
+ * "Agent · Explore: find the hook code", "Workflow · review-changes".
+ */
+export function backgroundLabels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter(isRecord)
+    .filter((t) => WAITS_ON[str(t.type) ?? ''] && !FINISHED.has(str(t.status) ?? ''))
+    .slice(0, 20)
+    .map((t) => {
+      const what =
+        t.type === 'subagent'
+          ? [str(t.agent_type), str(t.description)].filter(Boolean).join(': ')
+          : (str(t.name) ?? str(t.description))
+      const kind = WAITS_ON[t.type as string]!
+      return clip(what ? `${kind} · ${what}` : kind, 120)
+    })
 }
 
 /** The PermissionRequest hook's stdout for an outcome. Empty means "no opinion": the terminal dialog decides. */

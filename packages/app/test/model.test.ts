@@ -1,7 +1,7 @@
 import type { StateView } from '@agentwatch/protocol'
 import { bind, generateVaultKey, importVaultKey, seal } from '@agentwatch/protocol'
 import { describe, expect, it } from 'vitest'
-import { decryptEvents, decryptState } from '../src/lib/model.ts'
+import { backgroundWork, decryptEvents, decryptState, splitBackgroundLabel } from '../src/lib/model.ts'
 
 async function state(key: CryptoKey, other: CryptoKey): Promise<StateView> {
   const now = Date.now()
@@ -98,5 +98,46 @@ describe('decryptEvents', () => {
       { at, kind: 'done', text: 'mine' },
       { at: at + 1, kind: 'done' },
     ])
+  })
+})
+
+describe('waiting on background work', () => {
+  it('says what a session waits on, from its labels, or from the count alone under summary privacy', () => {
+    expect(backgroundWork(1, ['Agent · Explore: find the hooks'])).toBe('a background agent')
+    expect(backgroundWork(2, ['Agent · Explore: a', 'Agent · review'])).toBe('2 background agents')
+    expect(backgroundWork(1, ['Workflow · review-changes'])).toBe('a background workflow')
+    expect(backgroundWork(3, ['Agent · a', 'Workflow · x', 'Agent · y'])).toBe('3 background tasks')
+    expect(backgroundWork(2, undefined)).toBe('2 background tasks')
+    expect(backgroundWork(1, undefined)).toBe('a background task')
+  })
+
+  it('splits a label into its kind and what it is doing', () => {
+    expect(splitBackgroundLabel('Agent · Explore: a · b')).toEqual({ kind: 'Agent', what: 'Explore: a · b' })
+    expect(splitBackgroundLabel('Monitor')).toEqual({ kind: 'Monitor', what: '' })
+  })
+
+  it('carries the count through from the relay, and 0 from daemons that never send it', async () => {
+    const key = await importVaultKey(generateVaultKey())
+    const session = (id: string, background?: number) => ({
+      sourceId: 'a',
+      id,
+      agent: 'claude' as const,
+      state: 'working' as const,
+      stateSince: 1,
+      startedAt: 1,
+      turnStartedAt: 1,
+      updatedAt: 1,
+      caps: { reply: false },
+      ...(background !== undefined ? { background } : {}),
+    })
+    const raw: StateView = {
+      serverTime: 1,
+      mute: null,
+      sources: [],
+      requests: [],
+      sessions: [session('s1', 2), session('s2')],
+    }
+    const model = await decryptState(raw, key)
+    expect(model.sessions.map((s) => s.background)).toEqual([2, 0])
   })
 })

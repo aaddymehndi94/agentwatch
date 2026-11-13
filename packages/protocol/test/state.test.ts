@@ -37,6 +37,40 @@ describe('session state machine', () => {
     expect(s.turnStartedAt).toBeNull()
   })
 
+  it('a turn that ends with background work still running is waiting, not done: no push until it all finishes', () => {
+    const ctx = { privacy: 'full' as const, doneMinSeconds: 30 }
+    let s = newSession('s1', 'claude', 0)
+    s = reduce(s, { type: 'turn.start', at: 1_000 }).session
+    const handoff = reduce(s, {
+      type: 'turn.end',
+      at: 40_000,
+      message: 'Started two agents; I will report back.',
+      background: ['Agent · Explore: find the hooks', 'Agent · review the diff'],
+    })
+    s = handoff.session
+    expect(s.state).toBe('working')
+    expect(s.background).toBe(2)
+    expect(s.turnStartedAt).toBe(1_000)
+    expect(s.info.background).toEqual(['Agent · Explore: find the hooks', 'Agent · review the diff'])
+    expect(handoff.transition).toEqual({ kind: 'waiting', count: 2 })
+    expect(decide(s, handoff.transition!, ctx)).toBeNull()
+
+    // A background agent finishes: its notice starts a turn, which ends with one still running.
+    s = reduce(s, { type: 'turn.start', at: 90_000 }).session
+    expect(s.turnStartedAt).toBe(1_000)
+    s = reduce(s, { type: 'turn.end', at: 95_000, background: ['Agent · review the diff'] }).session
+    expect(s.background).toBe(1)
+
+    // The last one finishes: now it's done, timed from the very first start.
+    s = reduce(s, { type: 'turn.start', at: 150_000 }).session
+    const done = reduce(s, { type: 'turn.end', at: 160_000, message: 'Both agents are back. All done.' })
+    expect(done.session.state).toBe('idle')
+    expect(done.session.background).toBe(0)
+    expect(done.session.info.background).toBeUndefined()
+    expect(done.transition).toEqual({ kind: 'done', turnMs: 159_000 })
+    expect(decide(done.session, done.transition!, ctx)?.kind).toBe('done')
+  })
+
   it('returns to working after an answer mid-turn, and stays needs_you while another request is open', () => {
     let { s } = run([
       { type: 'turn.start', at: 1 },

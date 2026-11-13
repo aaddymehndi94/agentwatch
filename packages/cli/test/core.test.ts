@@ -148,6 +148,56 @@ describe('Core', () => {
     expect(info.body).toContain('I wrote the date to s3.txt')
   })
 
+  it('a turn that hands off to background agents waits for them: no push until they are all back', async () => {
+    const { core, claude } = await makeCore()
+    const t0 = Date.now()
+    vi.useFakeTimers({ now: t0, toFake: ['Date'] })
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    vi.setSystemTime(t0 + 65_000)
+    await claude.onHook({
+      ...byEvent('Stop'),
+      background_tasks: [
+        { id: 'a1', type: 'subagent', status: 'running', description: 'Find the hook code', agent_type: 'Explore' },
+        { id: 'w1', type: 'workflow', status: 'running', description: 'Review the diff', name: 'review-changes' },
+        { id: 'b1', type: 'shell', status: 'running', description: 'Dev server', command: 'pnpm dev' },
+      ],
+    })
+    await core.flushed()
+    expect(of('push')).toHaveLength(0)
+    expect(core.sessions.get(SID)?.state).toBe('working')
+    expect(lastSession().background).toBe(2)
+    const info = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
+    expect(info.background).toEqual(['Agent · Explore: Find the hook code', 'Workflow · review-changes'])
+    expect(of('event').map((m) => m.event.kind)).toContain('waiting')
+
+    // The agents come back: their notice starts a turn, and this time nothing is left running.
+    vi.setSystemTime(t0 + 200_000)
+    await claude.onHook({ ...byEvent('UserPromptSubmit'), prompt: '<task-notification><status>completed</status>' })
+    await claude.onHook({ ...byEvent('Stop'), background_tasks: [] })
+    await core.flushed()
+    expect(of('push').map((m) => m.push.kind)).toEqual(['done'])
+    expect(core.sessions.get(SID)?.state).toBe('idle')
+  })
+
+  it('a dev server or monitor left running does not hold the turn open: it is done', async () => {
+    const { core, claude } = await makeCore()
+    const t0 = Date.now()
+    vi.useFakeTimers({ now: t0, toFake: ['Date'] })
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    vi.setSystemTime(t0 + 65_000)
+    await claude.onHook({
+      ...byEvent('Stop'),
+      background_tasks: [
+        { id: 'b1', type: 'shell', status: 'running', description: 'Dev server', command: 'pnpm dev' },
+        { id: 'm1', type: 'monitor', status: 'running', description: 'Watch the logs' },
+        { id: 'a1', type: 'subagent', status: 'completed', description: 'Already back' },
+      ],
+    })
+    await core.flushed()
+    expect(core.sessions.get(SID)?.state).toBe('idle')
+    expect(of('push').map((m) => m.push.kind)).toEqual(['done'])
+  })
+
   it('summary privacy keeps free text on the machine', async () => {
     const { core, claude } = await makeCore({ privacy: 'summary' })
     await claude.onHook(byEvent('UserPromptSubmit'))

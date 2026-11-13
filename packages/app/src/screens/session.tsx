@@ -8,6 +8,7 @@ import { getEvents } from '../lib/api.ts'
 import { demoEvents } from '../lib/demo.ts'
 import {
   agentLabel,
+  backgroundWork,
   decryptEvents,
   type EventVM,
   projectName,
@@ -15,6 +16,7 @@ import {
   STATE_LABEL,
   sessionKey,
   sourceLabel,
+  splitBackgroundLabel,
   vaultKey,
 } from '../lib/model.ts'
 import { type AppState, sendCommand } from '../lib/store.ts'
@@ -60,6 +62,14 @@ function thread(events: EventVM[], s: SessionVM): Item[] {
             : { k: 'sys', at: e.at, icon: 'info', label: 'You replied' },
         )
         break
+      case 'waiting':
+        // The turn ended but its background work is still out: the agent's words, if any, and nothing louder.
+        items.push(
+          e.text
+            ? { k: 'agent', at: e.at, text: e.text, latest: false }
+            : { k: 'sys', at: e.at, icon: 'info', label: 'Handed work to the background' },
+        )
+        break
       case 'done':
         items.push(
           e.text
@@ -88,6 +98,36 @@ function thread(events: EventVM[], s: SessionVM): Item[] {
     }
   }
   return items
+}
+
+/** The live line under the thread: working, or waiting on background work (and on what, when the labels came). */
+function Working({ s, elapsed }: { s: SessionVM; elapsed: number | null }) {
+  const labels = (s.background > 0 ? (s.info?.background ?? []) : []).map(splitBackgroundLabel)
+  // The line above already names the kind when they are all one kind ("2 background agents").
+  const mixed = new Set(labels.map((l) => l.kind)).size > 1
+  return (
+    <div class="working-wrap" role="status">
+      <div class="working">
+        <span class="orb" data-state="working" aria-hidden="true" />
+        <span class="shimmer">
+          {s.background > 0
+            ? `Waiting on ${backgroundWork(s.background, s.info?.background)}`
+            : `${agentLabel(s.agent)} is working`}
+        </span>
+        {elapsed !== null && <span class="num">{duration(elapsed)}</span>}
+      </div>
+      {labels.length > 0 && (
+        <ul class="bg-tasks">
+          {labels.map(({ kind, what }, i) => (
+            <li key={i}>
+              {(mixed || !what) && <span class="bg-kind">{kind}</span>}
+              {what && <span class="bg-what">{what}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 export function SessionScreen(props: {
@@ -184,13 +224,7 @@ export function SessionScreen(props: {
               </li>
             ))}
           </ol>
-          {s.state === 'working' && (
-            <div class="working" role="status">
-              <span class="orb" data-state="working" aria-hidden="true" />
-              <span class="shimmer">{agentLabel(s.agent)} is working</span>
-              {s.turnStartedAt && <span class="num">{duration(t - s.turnStartedAt)}</span>}
-            </div>
-          )}
+          {s.state === 'working' && <Working s={s} elapsed={s.turnStartedAt ? t - s.turnStartedAt : null} />}
           {requests.length > 0 && (
             <div class="stack">
               {requests.map((r) => (

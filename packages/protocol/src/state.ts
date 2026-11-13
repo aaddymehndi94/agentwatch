@@ -16,6 +16,11 @@ export interface Session {
   caps: Capabilities
   /** Duration of the last completed turn, ms. */
   lastTurnMs: number | null
+  /**
+   * Background tasks (subagents, shells, monitors, workflows) still running after the agent's turn ended. While any
+   * are, the session is working, not idle: the agent hasn't finished, it's waiting on its own work.
+   */
+  background: number
 }
 
 export type AgentEvent =
@@ -23,7 +28,8 @@ export type AgentEvent =
   | { type: 'turn.start'; at: number }
   | { type: 'request.open'; at: number; requestId: string }
   | { type: 'request.close'; at: number; requestId: string }
-  | { type: 'turn.end'; at: number; message?: string }
+  /** `background`: labels of the agent's own work still running; non-empty means the job isn't finished yet. */
+  | { type: 'turn.end'; at: number; message?: string; background?: string[] }
   | { type: 'session.end'; at: number }
   | { type: 'info'; at: number; info: SessionInfo }
   /** An external observation (e.g. `claude agents --json`), used to repair drift and discover sessions. */
@@ -35,6 +41,8 @@ export type Transition =
   | { kind: 'needs_you'; requestId: string }
   | { kind: 'answered'; requestId: string }
   | { kind: 'done'; turnMs: number | null }
+  /** The turn ended but the agent's background work runs on: no push, nothing is asked of you yet. */
+  | { kind: 'waiting'; count: number }
   | { kind: 'ended' }
 
 export function newSession(id: string, agent: AgentKind, at: number): Session {
@@ -50,6 +58,7 @@ export function newSession(id: string, agent: AgentKind, at: number): Session {
     openRequests: [],
     caps: { reply: false, replyReason: 'Not connected yet' },
     lastTurnMs: null,
+    background: 0,
   }
 }
 
@@ -78,7 +87,10 @@ export function reduce(s: Session, e: AgentEvent): { session: Session; transitio
       return { session: next, transition: fresh ? { kind: 'started' } : null }
     }
     case 'turn.start': {
-      const next = withState({ ...s, turnStartedAt: e.at }, s.openRequests.length ? 'needs_you' : 'working', e.at)
+      // A turn woken by the agent's own background work continues the same job: its clock keeps running.
+      const continuing = (s.background ?? 0) > 0 && s.turnStartedAt !== null
+      const turnStartedAt = continuing ? s.turnStartedAt : e.at
+      const next = withState({ ...s, turnStartedAt }, s.openRequests.length ? 'needs_you' : 'working', e.at)
       return { session: next, transition: { kind: 'prompted' } }
     }
     case 'request.open': {
@@ -96,13 +108,23 @@ export function reduce(s: Session, e: AgentEvent): { session: Session; transitio
       }
     }
     case 'turn.end': {
+      const { background: _was, ...rest } = s.info
+      const said = e.message !== undefined ? { ...rest, snippet: e.message } : rest
+      if (e.background?.length) {
+        const info = { ...said, background: e.background }
+        const next = withState({ ...s, info, openRequests: [], background: e.background.length }, 'working', e.at)
+        return { session: next, transition: { kind: 'waiting', count: e.background.length } }
+      }
       const turnMs = s.turnStartedAt !== null ? e.at - s.turnStartedAt : null
-      const info = e.message !== undefined ? { ...s.info, snippet: e.message } : s.info
-      const next = withState({ ...s, info, turnStartedAt: null, openRequests: [], lastTurnMs: turnMs }, 'idle', e.at)
+      const next = withState(
+        { ...s, info: said, turnStartedAt: null, openRequests: [], lastTurnMs: turnMs, background: 0 },
+        'idle',
+        e.at,
+      )
       return { session: next, transition: { kind: 'done', turnMs } }
     }
     case 'session.end': {
-      const next = withState({ ...s, openRequests: [], turnStartedAt: null }, 'ended', e.at)
+      const next = withState({ ...s, openRequests: [], turnStartedAt: null, background: 0 }, 'ended', e.at)
       return { session: next, transition: { kind: 'ended' } }
     }
     case 'info':

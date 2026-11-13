@@ -18,7 +18,7 @@ export type RequestKind = z.infer<typeof RequestKind>
 export const RequestStatus = z.enum(['open', 'answered', 'answered_locally', 'expired', 'cancelled'])
 export type RequestStatus = z.infer<typeof RequestStatus>
 
-export const EventKind = z.enum(['started', 'prompted', 'needs_you', 'answered', 'done', 'ended', 'replied'])
+export const EventKind = z.enum(['started', 'prompted', 'needs_you', 'answered', 'done', 'waiting', 'ended', 'replied'])
 export type EventKind = z.infer<typeof EventKind>
 
 const id = z.string().min(1).max(200)
@@ -32,6 +32,8 @@ export const SessionInfo = z.object({
   cwd: z.string().max(1000).optional(),
   snippet: z.string().max(6000).optional(),
   model: z.string().max(100).optional(),
+  /** What the agent is waiting on while its own background work runs ("Agent · Explore: find the hooks"). */
+  background: z.array(z.string().max(200)).max(20).optional(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
@@ -76,6 +78,8 @@ export const SessionWire = z.object({
   turnStartedAt: ts.nullable(),
   updatedAt: ts,
   caps: Capabilities,
+  /** Background tasks (subagents, shells, monitors) still running after the turn ended: working, not idle. */
+  background: z.number().int().nonnegative().optional(),
   sealed: z.string().optional(),
 })
 export type SessionWire = z.infer<typeof SessionWire>

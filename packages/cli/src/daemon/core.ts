@@ -354,7 +354,11 @@ export class Core {
   private onTransition(s: Session, t: Transition, text?: string): void {
     const req = t.kind === 'needs_you' ? this.requests.get(t.requestId) : undefined
     const eventText =
-      t.kind === 'done' ? s.info.snippet : t.kind === 'needs_you' && req ? (req.info.detail ?? req.info.title) : text
+      t.kind === 'done' || t.kind === 'waiting'
+        ? s.info.snippet
+        : t.kind === 'needs_you' && req
+          ? (req.info.detail ?? req.info.title)
+          : text
     // `started` is implied by the session appearing; every other transition is a timeline event.
     if (t.kind !== 'started') this.publishEvent(s.id, t.kind, eventText)
     const intent = decide(s, t, { privacy: this.o.privacy, doneMinSeconds: this.o.doneMinSeconds, request: req?.info })
@@ -398,6 +402,7 @@ export class Core {
       cwd: info.cwd,
       snippet: info.snippet ? clipText(info.snippet, MESSAGE_MAX) : undefined,
       model: info.model,
+      background: info.background?.slice(0, 20).map((b) => clip(b, 200)),
     }
   }
 
@@ -427,6 +432,7 @@ export class Core {
       turnStartedAt: s.turnStartedAt,
       updatedAt: s.updatedAt,
       caps: this.caps(s),
+      ...(s.background ? { background: s.background } : {}),
       sealed: await seal(this.o.key, this.visibleInfo(s.info), bind.session(this.o.sourceId, s.id)),
     }
   }

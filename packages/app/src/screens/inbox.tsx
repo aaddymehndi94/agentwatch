@@ -7,6 +7,7 @@ import { api } from '../lib/api.ts'
 import { plainText } from '../lib/markdown.ts'
 import {
   agentLabel,
+  backgroundWork,
   type Model,
   projectName,
   type RequestVM,
@@ -235,11 +236,15 @@ function SourceGroup({
 }
 
 function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => void }) {
-  const text = s.info?.snippet
-    ? plainText(s.info.snippet)
-    : s.info?.title && s.info.title !== s.info.project
-      ? s.info.title
-      : ''
+  // A turn that ended with subagents still out isn't done: say what it waits on, not its last words.
+  const waiting = s.state === 'working' && s.background > 0
+  const text = waiting
+    ? backgroundWork(s.background, s.info?.background)
+    : s.info?.snippet
+      ? plainText(s.info.snippet)
+      : s.info?.title && s.info.title !== s.info.project
+        ? s.info.title
+        : ''
   return (
     <li>
       <button
@@ -260,7 +265,7 @@ function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => 
           </span>
           <span class="row-sub">
             <span class="state-word" data-state={s.state}>
-              {STATE_LABEL[s.state]}
+              {waiting ? 'Waiting' : STATE_LABEL[s.state]}
             </span>
             {text && (
               <>

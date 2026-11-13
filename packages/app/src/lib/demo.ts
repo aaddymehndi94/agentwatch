@@ -31,7 +31,9 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
     sess('laptop-a', 's3', 'claude', 'working', now - 7 * min, {
       project: 'design-tokens',
       title: 'Generate the dark palette',
-      snippet: 'Checking contrast for every text/background pair.',
+      snippet:
+        'The first pass failed four pairs. I started two agents: one checks every pair, one drafts the dark neutrals. I’ll merge both when they’re back.',
+      background: ['Agent · Explore: check contrast for every text/background pair', 'Agent · draft the dark neutrals'],
     }),
     sess('laptop-a', 's4', 'claude', 'idle', now - 23 * min, {
       project: 'agentwatch',
@@ -47,6 +49,7 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
     sess('laptop-a', 's8', 'claude', 'ended', now - 5 * 3600_000, { project: 'scratch' }),
   ]
   for (const s of sessions) if (s.id === 's4') s.caps = { reply: true }
+  for (const s of sessions) if (s.id === 's3') s.background = 2
   const requests: RequestVM[] = [
     {
       sourceId: 'laptop-a',
@@ -146,6 +149,11 @@ export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
   if (sessionId === 's3') {
     return [
       {
+        at: now - 2 * min,
+        kind: 'waiting',
+        text: 'The first pass failed four pairs. I started two agents: one checks every pair, one drafts the dark neutrals. I’ll merge both when they’re back.',
+      },
+      {
         at: now - 3 * min,
         kind: 'prompted',
         text: '<task-notification>\n<task-id>b7f2</task-id>\n<status>completed</status>\n<summary>Background command "pnpm contrast-check" completed (exit code 0)</summary>\n</task-notification>',
@@ -226,5 +234,6 @@ function sess(
         ? { reply: false, replyReason: 'This agent can’t take replies' }
         : { reply: false, replyReason: 'You can reply when the agent is idle' },
     info,
+    background: 0,
   }
 }

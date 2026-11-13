@@ -27,6 +27,8 @@ export interface SessionVM {
   updatedAt: number
   caps: Capabilities
   info: SessionInfo | null
+  /** Background tasks (subagents, commands…) the agent is waiting on. Above 0, it isn't done yet. */
+  background: number
 }
 
 export interface RequestVM {
@@ -98,6 +100,7 @@ export async function decryptState(raw: StateView, key: CryptoKey): Promise<Mode
       updatedAt: s.updatedAt,
       caps: s.caps,
       info: cleanInfo(await tryOpen<SessionInfo>(key, s.sealed, bind.session(s.sourceId, s.id))),
+      background: s.background ?? 0,
     })),
   )
   const ordered = [...raw.requests].sort((a, b) => a.createdAt - b.createdAt)
@@ -161,6 +164,24 @@ export function projectName(s: SessionVM): string {
 
 export function agentLabel(a: AgentKind): string {
   return a === 'claude' ? 'Claude' : a === 'codex' ? 'Codex' : 'Agent'
+}
+
+const WAITING_NOUN: Record<string, string> = { Agent: 'agent', Workflow: 'workflow' }
+
+/**
+ * The background work a session is still waiting on: "2 background agents". The labels ("Agent · …", "Workflow · …")
+ * name the kind; without them (summary privacy), or when the kinds are mixed, it's "tasks".
+ */
+export function backgroundWork(count: number, labels: string[] | undefined): string {
+  const kinds = new Set((labels ?? []).map((l) => WAITING_NOUN[l.split(' · ')[0] ?? ''] ?? 'task'))
+  const noun = labels?.length && kinds.size === 1 ? [...kinds][0]! : 'task'
+  return count === 1 ? `a background ${noun}` : `${count} background ${noun}s`
+}
+
+/** "Agent · Explore: find the hooks" → its kind and what it is doing. */
+export function splitBackgroundLabel(label: string): { kind: string; what: string } {
+  const at = label.indexOf(' · ')
+  return at < 0 ? { kind: label, what: '' } : { kind: label.slice(0, at), what: label.slice(at + 3) }
 }
 
 export const STATE_LABEL: Record<SessionState, string> = {

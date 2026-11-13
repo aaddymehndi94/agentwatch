@@ -2051,3 +2051,39 @@ input::placeholder {
     animation-duration: auto !important;
   }
 }
+
+/* What a session waits on after its turn: the background agents and commands it started, as a quiet list. */
+.working-wrap {
+  padding: 22px 6px 4px;
+}
+.working-wrap .working {
+  padding: 0;
+}
+.working .num {
+  white-space: nowrap;
+}
+.bg-tasks {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 0 0 26px;
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.bg-tasks li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.bg-kind {
+  flex: none;
+  color: var(--text-2);
+  font-weight: 560;
+}
+.bg-what {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
