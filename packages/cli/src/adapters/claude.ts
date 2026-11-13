@@ -5,6 +5,8 @@
 import {
   clip,
   DETAIL_MAX,
+  type Failure,
+  type FailureKind,
   isYourPrompt,
   literal,
   projectFromCwd,
@@ -114,17 +116,28 @@ export class ClaudeAdapter implements AgentAdapter {
         // permission_prompt duplicates a PermissionRequest we already hold; idle_prompt is noise.
         return ''
       }
-      case 'Stop':
-      case 'StopFailure': {
+      case 'Stop': {
         this.releaseAll(sid)
         const msg = str(p.last_assistant_message)
         // Subagents run in the background by default: a turn can end while they work. Then it isn't done.
-        const background = event === 'Stop' ? backgroundLabels(p.background_tasks) : []
+        const background = backgroundLabels(p.background_tasks)
         this.core.apply('claude', sid, {
           type: 'turn.end',
           at: now,
           ...(msg !== undefined ? { message: msg } : {}),
           ...(background.length ? { background } : {}),
+        })
+        return ''
+      }
+      case 'StopFailure': {
+        // The turn ended on an API error (a usage limit, overloaded servers, signed out), not because it was done.
+        this.releaseAll(sid)
+        const msg = str(p.last_assistant_message)
+        this.core.apply('claude', sid, {
+          type: 'turn.end',
+          at: now,
+          ...(msg !== undefined ? { message: msg } : {}),
+          failure: claudeFailure(p.error, p.error_details),
         })
         return ''
       }
@@ -198,6 +211,28 @@ export function backgroundLabels(raw: unknown): string[] {
       const kind = WAITS_ON[t.type as string]!
       return clip(what ? `${kind} · ${what}` : kind, 120)
     })
+}
+
+const CLAUDE_FAILURE: Record<string, FailureKind> = {
+  rate_limit: 'usage_limit',
+  billing_error: 'billing',
+  account_on_hold: 'billing',
+  authentication_failed: 'auth',
+  oauth_org_not_allowed: 'auth',
+  verification_required: 'auth',
+  cloud_credential_error: 'auth',
+  overloaded: 'overloaded',
+  server_error: 'overloaded',
+  max_output_tokens: 'output_limit',
+}
+
+/** `StopFailure`'s `error` (an SDKAssistantMessageError) and `error_details`, as the failure every agent shares. */
+export function claudeFailure(error: unknown, details: unknown): Failure {
+  const d = str(details)
+  const kind =
+    CLAUDE_FAILURE[str(error) ?? ''] ??
+    (d && /prompt is too long|context (window|length)|too many tokens/i.test(d) ? 'context_full' : 'error')
+  return { kind, ...(d ? { detail: clip(d, 500) } : {}) }
 }
 
 /** The PermissionRequest hook's stdout for an outcome. Empty means "no opinion": the terminal dialog decides. */

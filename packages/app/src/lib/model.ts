@@ -184,6 +184,16 @@ export function splitBackgroundLabel(label: string): { kind: string; what: strin
   return at < 0 ? { kind: label, what: '' } : { kind: label.slice(0, at), what: label.slice(at + 3) }
 }
 
+/**
+ * The state a session shows: its own, except that a turn waiting on background work reads "Waiting", and one that
+ * stopped on an error reads "Stopped" (in the colour of a problem) until the next turn starts.
+ */
+export function shownState(s: SessionVM): { key: SessionState | 'failed'; label: string } {
+  if (s.state === 'working' && s.background > 0) return { key: 'working', label: 'Waiting' }
+  if (s.state === 'idle' && s.info?.failure) return { key: 'failed', label: 'Stopped' }
+  return { key: s.state, label: STATE_LABEL[s.state] }
+}
+
 export const STATE_LABEL: Record<SessionState, string> = {
   needs_you: 'Needs you',
   working: 'Working',

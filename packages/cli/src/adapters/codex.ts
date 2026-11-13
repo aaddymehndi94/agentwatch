@@ -12,6 +12,8 @@ import {
   type CommandBody,
   clip,
   DETAIL_MAX,
+  type Failure,
+  type FailureKind,
   literal,
   projectFromCwd,
   type Question,
@@ -410,7 +412,8 @@ export class CodexAdapter implements AgentAdapter {
       case 'turn/completed': {
         if (!t) return
         t.turnId = undefined
-        this.endTurn(t)
+        const turn = (params.turn ?? {}) as Json
+        this.endTurn(t, turn.status === 'failed' ? codexFailure(turn.error) : undefined)
         return
       }
       case 'thread/status/changed': {
@@ -468,7 +471,7 @@ export class CodexAdapter implements AgentAdapter {
     this.core.apply('codex', t.id, { type: 'turn.start', at: Date.now() }, text !== undefined ? { text } : {})
   }
 
-  private endTurn(t: Thread): void {
+  private endTurn(t: Thread, failure?: Failure): void {
     if (t.turnPending) this.startTurn(t)
     for (const [k, h] of this.held) {
       if (h.threadId !== t.id) continue
@@ -476,7 +479,12 @@ export class CodexAdapter implements AgentAdapter {
       this.core.close(h.request.id, 'answered_locally')
     }
     const message = t.lastMessage
-    this.core.apply('codex', t.id, { type: 'turn.end', at: Date.now(), ...(message ? { message } : {}) })
+    this.core.apply('codex', t.id, {
+      type: 'turn.end',
+      at: Date.now(),
+      ...(message ? { message } : {}),
+      ...(failure ? { failure } : {}),
+    })
     t.fileChanges.clear()
   }
 
@@ -648,4 +656,30 @@ export function codexTuiAlive(cwd: string, procDir = '/proc'): boolean | null {
     } catch {}
   }
   return false
+}
+
+const CODEX_FAILURE: Record<string, FailureKind> = {
+  usageLimitExceeded: 'usage_limit',
+  rateLimitExceeded: 'usage_limit',
+  sessionBudgetExceeded: 'usage_limit',
+  serverOverloaded: 'overloaded',
+  internalServerError: 'overloaded',
+  policyCapacityUnavailable: 'overloaded',
+  flexUnavailable: 'overloaded',
+  httpConnectionFailed: 'overloaded',
+  responseStreamConnectionFailed: 'overloaded',
+  responseStreamDisconnected: 'overloaded',
+  responseTooManyFailedAttempts: 'overloaded',
+  unauthorized: 'auth',
+  contextWindowExceeded: 'context_full',
+}
+
+/** A failed turn's `turn.error` (`{message, codexErrorInfo, additionalDetails}`), as the failure every agent shares. */
+export function codexFailure(raw: unknown): Failure {
+  const e = (raw && typeof raw === 'object' ? raw : {}) as Json
+  const info = e.codexErrorInfo
+  // Plain variants are strings; ones with data are a one-key object (`{ httpConnectionFailed: {…} }`).
+  const code = typeof info === 'string' ? info : info && typeof info === 'object' ? (Object.keys(info)[0] ?? '') : ''
+  const detail = [e.message, e.additionalDetails].filter((x) => typeof x === 'string' && x).join(' ')
+  return { kind: CODEX_FAILURE[code] ?? 'error', ...(detail ? { detail: clip(detail, 500) } : {}) }
 }

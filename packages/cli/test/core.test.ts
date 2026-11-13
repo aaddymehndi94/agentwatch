@@ -11,7 +11,7 @@ import {
   type SourceMessage,
 } from '@agentwatch/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeAdapter, describeTool, hookOutput, matchKey } from '../src/adapters/claude.ts'
+import { ClaudeAdapter, claudeFailure, describeTool, hookOutput, matchKey } from '../src/adapters/claude.ts'
 import { type AgentAdapter, Core, type CoreOptions } from '../src/daemon/core.ts'
 import { loadClaudeFixture } from './harness.ts'
 
@@ -71,6 +71,17 @@ describe('Claude adapter helpers', () => {
     expect(answered({ annotations: {} })).toBe(key)
     expect(answered({ annotations: { 'Ship it?': { notes: 'after lunch' } } })).toBe(key)
     expect(matchKey('AskUserQuestion', { questions: [{ question: 'Deploy?' }] })).not.toBe(key)
+  })
+
+  it('names what stopped a turn the way every agent does', () => {
+    expect(claudeFailure('rate_limit', 'You have hit your limit · resets 3:40pm')).toEqual({
+      kind: 'usage_limit',
+      detail: 'You have hit your limit · resets 3:40pm',
+    })
+    expect(claudeFailure('overloaded', undefined)).toEqual({ kind: 'overloaded' })
+    expect(claudeFailure('authentication_failed', '').kind).toBe('auth')
+    expect(claudeFailure('invalid_request', 'prompt is too long: 210000 tokens > 200000').kind).toBe('context_full')
+    expect(claudeFailure('something_new', undefined)).toEqual({ kind: 'error' })
   })
 
   it('key order does not matter', () => {
@@ -196,6 +207,53 @@ describe('Core', () => {
     await core.flushed()
     expect(core.sessions.get(SID)?.state).toBe('idle')
     expect(of('push').map((m) => m.push.kind)).toEqual(['done'])
+  })
+
+  it("a turn that stops on a usage limit pushes at once, loudly, with Claude's own words", async () => {
+    const { core, claude } = await makeCore()
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    // Shape from Claude Code 2.1.323's StopFailureHookInput (not yet captured live: it needs a real limit).
+    await claude.onHook({
+      ...byEvent('Stop'),
+      hook_event_name: 'StopFailure',
+      error: 'rate_limit',
+      error_details: 'You have hit your limit · resets 3:40pm',
+    })
+    await core.flushed()
+    expect(core.sessions.get(SID)?.state).toBe('idle')
+    const push = of('push')[0]!.push
+    expect(push).toMatchObject({ kind: 'failed', tag: `session:${SID}`, urgency: 'high', actions: false })
+    expect(await open<PushInfo>(key, push.sealed, bind.push(SOURCE, push))).toEqual({
+      title: 'Claude stopped: usage limit reached · work',
+      body: 'You have hit your limit · resets 3:40pm',
+    })
+    const info = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
+    expect(info.failure).toEqual({ kind: 'usage_limit', detail: 'You have hit your limit · resets 3:40pm' })
+    const ev = of('event').at(-1)!.event
+    expect(ev.kind).toBe('failed')
+    expect(await open(key, ev.sealed!, bind.event(SOURCE, { ...ev, sessionId: SID }))).toEqual({
+      text: 'Usage limit reached\nYou have hit your limit · resets 3:40pm',
+    })
+  })
+
+  it('summary privacy: a failure says what kind, never the error text', async () => {
+    const { core, claude } = await makeCore({ privacy: 'summary' })
+    await claude.onHook(byEvent('UserPromptSubmit'))
+    await claude.onHook({
+      ...byEvent('Stop'),
+      hook_event_name: 'StopFailure',
+      error: 'overloaded',
+      error_details: 'secret',
+    })
+    await core.flushed()
+    const push = of('push')[0]!.push
+    expect(await open<PushInfo>(key, push.sealed, bind.push(SOURCE, push))).toEqual({
+      title: 'Claude stopped: servers busy · work',
+      body: 'The servers were overloaded. Try again in a minute.',
+    })
+    const info = await open<SessionInfo>(key, lastSession().sealed!, bind.session(SOURCE, SID))
+    expect(info).toEqual({ project: 'work', failure: { kind: 'overloaded' } })
+    expect(JSON.stringify(sent)).not.toContain('secret')
   })
 
   it('summary privacy keeps free text on the machine', async () => {

@@ -2,6 +2,7 @@
 // machine and OS user.
 
 import type { SourceView } from '@agentwatch/protocol'
+import { failureLabel } from '@agentwatch/protocol/lite'
 import { useState } from 'preact/hooks'
 import { api } from '../lib/api.ts'
 import { plainText } from '../lib/markdown.ts'
@@ -12,8 +13,8 @@ import {
   projectName,
   type RequestVM,
   type SessionVM,
-  STATE_LABEL,
   sessionKey,
+  shownState,
   sourceLabel,
 } from '../lib/model.ts'
 import { type AppState, refresh, setMuteLocal } from '../lib/store.ts'
@@ -109,10 +110,14 @@ function Loading() {
 /** The one-line answer to "does anything need me?", and what everything else is doing. */
 function Status({ model, open, now }: { model: Model; open: RequestVM[]; now: number }) {
   const live = model.sessions.filter((s) => s.state !== 'ended')
-  const count = (st: string) => live.filter((s) => s.state === st).length
-  const parts = [count('working') && `${count('working')} working`, count('idle') && `${count('idle')} idle`].filter(
-    Boolean,
-  ) as string[]
+  // A session that stopped on an error is idle, but it isn't done: it's counted on its own.
+  const count = (st: string) =>
+    live.filter((s) => (s.state === 'idle' && s.info?.failure ? 'stopped' : s.state) === st).length
+  const parts = [
+    count('working') && `${count('working')} working`,
+    count('stopped') && `${count('stopped')} stopped`,
+    count('idle') && `${count('idle')} idle`,
+  ].filter(Boolean) as string[]
   let title: string
   let sub: string
   if (open.length) {
@@ -237,14 +242,17 @@ function SourceGroup({
 
 function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => void }) {
   // A turn that ended with subagents still out isn't done: say what it waits on, not its last words.
+  const shown = shownState(s)
   const waiting = s.state === 'working' && s.background > 0
   const text = waiting
     ? backgroundWork(s.background, s.info?.background)
-    : s.info?.snippet
-      ? plainText(s.info.snippet)
-      : s.info?.title && s.info.title !== s.info.project
-        ? s.info.title
-        : ''
+    : shown.key === 'failed'
+      ? failureLabel(s.info?.failure?.kind)
+      : s.info?.snippet
+        ? plainText(s.info.snippet)
+        : s.info?.title && s.info.title !== s.info.project
+          ? s.info.title
+          : ''
   return (
     <li>
       <button
@@ -253,7 +261,7 @@ function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => 
         data-state={s.state}
         onClick={() => go(`#/s/${encodeURIComponent(s.sourceId)}/${encodeURIComponent(s.id)}`)}
       >
-        <span class="orb" data-state={s.state} aria-hidden="true" />
+        <span class="orb" data-state={shown.key} aria-hidden="true" />
         <span class="row-main">
           <span class="row-top">
             <span class="row-title">{s.info ? projectName(s) : 'Unreadable session'}</span>
@@ -264,8 +272,8 @@ function Row({ s, now, go }: { s: SessionVM; now: number; go: (hash: string) => 
             </span>
           </span>
           <span class="row-sub">
-            <span class="state-word" data-state={s.state}>
-              {waiting ? 'Waiting' : STATE_LABEL[s.state]}
+            <span class="state-word" data-state={shown.key}>
+              {shown.label}
             </span>
             {text && (
               <>

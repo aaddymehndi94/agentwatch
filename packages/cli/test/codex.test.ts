@@ -14,7 +14,7 @@ import {
 } from '@agentwatch/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type WebSocket, WebSocketServer } from 'ws'
-import { CodexAdapter, codexTuiAlive, unwrapShell } from '../src/adapters/codex.ts'
+import { CodexAdapter, codexFailure, codexTuiAlive, unwrapShell } from '../src/adapters/codex.ts'
 import { Core } from '../src/daemon/core.ts'
 import { CLI_DIR } from './harness.ts'
 
@@ -333,6 +333,45 @@ describe('Codex adapter', () => {
       commandId: expect.any(String),
       status: 'applied',
     })
+  })
+
+  it('a turn that fails on the usage limit is a failure, pushed loudly, not a finish', async () => {
+    fake.resumeStatus = { type: 'idle' }
+    fake.onResume = () => {}
+    await waitFor('idle thread', () => session()?.state === 'idle')
+    const started = recorded('turn/started') as { turn: Json }
+    fake.notify('turn/started', started)
+    await waitFor('working', () => session()?.state === 'working')
+    // Shape from the codex 0.166 schema (TurnError); not yet captured live.
+    fake.notify('turn/completed', {
+      threadId: THREAD,
+      turn: {
+        ...started.turn,
+        status: 'failed',
+        error: {
+          message: 'You have hit your usage limit.',
+          codexErrorInfo: 'usageLimitExceeded',
+          additionalDetails: 'Try again at 3:40 PM.',
+        },
+      },
+    })
+    await waitFor('idle with a failure', () => session()?.info.failure)
+    expect(session()?.state).toBe('idle')
+    expect(session()?.info.failure).toEqual({
+      kind: 'usage_limit',
+      detail: 'You have hit your usage limit. Try again at 3:40 PM.',
+    })
+    await waitFor('push', () => sent.find((m) => m.t === 'push'))
+    expect(sent.find((m) => m.t === 'push')).toMatchObject({ push: { kind: 'failed', urgency: 'high' } })
+  })
+
+  it('maps Codex error codes, plain and with data', () => {
+    expect(codexFailure({ message: 'x', codexErrorInfo: 'contextWindowExceeded', additionalDetails: null }).kind).toBe(
+      'context_full',
+    )
+    expect(codexFailure({ codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 503 } } }).kind).toBe('overloaded')
+    expect(codexFailure({ codexErrorInfo: 'unauthorized' }).kind).toBe('auth')
+    expect(codexFailure(null)).toEqual({ kind: 'error' })
   })
 
   it('maps a request_user_input question to options, and the answer back to question ids', async () => {

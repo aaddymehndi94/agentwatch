@@ -46,13 +46,18 @@ export function demoModel(now = Date.now(), variant: DemoVariant = 'full'): Mode
       project: 'nightly-deploy',
       snippet: 'Staging deploy finished. Waiting for the next schedule.',
     }),
+    sess('laptop-a', 's9', 'codex', 'idle', now - 12 * min, {
+      project: 'search-index',
+      title: 'Rebuild the search index',
+      failure: { kind: 'usage_limit', detail: 'You’ve hit your usage limit. Try again at 4:40 PM.' },
+    }),
     sess('laptop-a', 's8', 'claude', 'ended', now - 5 * 3600_000, { project: 'scratch' }),
   ]
   for (const s of sessions) if (s.id === 's4') s.caps = { reply: true }
   for (const s of sessions) if (s.id === 's3') s.background = 2
   // Claude queues a reply sent mid-turn; Codex steers it into the running turn.
   for (const s of sessions) if (s.id === 's1' || s.id === 's3') s.caps = { reply: true, busyReply: 'queue' }
-  for (const s of sessions) if (s.id === 's2') s.caps = { reply: true, busyReply: 'steer' }
+  for (const s of sessions) if (s.id === 's2' || s.id === 's9') s.caps = { reply: true, busyReply: 'steer' }
   const requests: RequestVM[] = [
     {
       sourceId: 'laptop-a',
@@ -141,6 +146,16 @@ export function demoEvents(now = Date.now(), sessionId = 's1'): EventVM[] {
         text: 'Read through `docs/` and the CLI help. Two commands were undocumented: `rotate` and `invite`.',
       },
       { at: now - 55 * min, kind: 'prompted', text: 'Start by reading the docs folder and listing what is missing.' },
+    ]
+  }
+  if (sessionId === 's9') {
+    return [
+      {
+        at: now - 12 * min,
+        kind: 'failed',
+        text: 'Usage limit reached\nYou’ve hit your usage limit. Try again at 4:40 PM.',
+      },
+      { at: now - 30 * min, kind: 'prompted', text: 'Rebuild the search index from the new schema.' },
     ]
   }
   if (sessionId === 's2') {

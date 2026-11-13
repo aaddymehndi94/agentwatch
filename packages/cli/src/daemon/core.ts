@@ -14,6 +14,7 @@ import {
   clipText,
   decide,
   type EventKind,
+  failureLabel,
   MESSAGE_MAX,
   newSession,
   type Privacy,
@@ -377,9 +378,11 @@ export class Core {
     const eventText =
       t.kind === 'done' || t.kind === 'waiting'
         ? s.info.snippet
-        : t.kind === 'needs_you' && req
-          ? (req.info.detail ?? req.info.title)
-          : text
+        : t.kind === 'failed'
+          ? [failureLabel(t.failure.kind), t.failure.detail].filter(Boolean).join('\n')
+          : t.kind === 'needs_you' && req
+            ? (req.info.detail ?? req.info.title)
+            : text
     // `started` is implied by the session appearing; every other transition is a timeline event.
     if (t.kind !== 'started') this.publishEvent(s.id, t.kind, eventText)
     const intent = decide(s, t, { privacy: this.o.privacy, doneMinSeconds: this.o.doneMinSeconds, request: req?.info })
@@ -416,7 +419,13 @@ export class Core {
 
   /** What of a session's info may leave the machine. `summary` keeps only the folder name and model. */
   private visibleInfo(info: SessionInfo): SessionInfo {
-    if (this.o.privacy === 'summary') return { project: info.project, model: info.model }
+    // A failure's kind is a state, like "idle"; its detail is the agent's own words.
+    if (this.o.privacy === 'summary')
+      return {
+        project: info.project,
+        model: info.model,
+        ...(info.failure ? { failure: { kind: info.failure.kind } } : {}),
+      }
     return {
       title: info.title ? clip(info.title, 300) : undefined,
       project: info.project,
@@ -424,6 +433,9 @@ export class Core {
       snippet: info.snippet ? clipText(info.snippet, MESSAGE_MAX) : undefined,
       model: info.model,
       background: info.background?.slice(0, 20).map((b) => clip(b, 200)),
+      failure: info.failure
+        ? { kind: info.failure.kind, ...(info.failure.detail ? { detail: clip(info.failure.detail, 500) } : {}) }
+        : undefined,
     }
   }
 

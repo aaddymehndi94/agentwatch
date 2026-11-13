@@ -1,6 +1,7 @@
 // Notify policy: which transitions become a push, and what the push says. Evaluated in the daemon, before sealing,
 // so `summary` privacy can strip free text at the source.
 
+import { FAILURE_WORDS } from './failure.ts'
 import { agentName, clip, type Session, type Transition } from './state.ts'
 import type { Privacy, PushInfo, PushKind, RequestInfo } from './wire.ts'
 
@@ -73,6 +74,19 @@ export function decide(session: Session, t: Transition, ctx: PolicyContext): Pus
         urgency: 'normal',
         actions: false,
         info: { title: `${who} finished · ${where}`, body },
+      }
+    }
+    case 'failed': {
+      // Always pushed, and loudly: the agent has stopped and won't carry on by itself.
+      const words = FAILURE_WORDS[t.failure.kind] ?? FAILURE_WORDS.error
+      const label = words.label.charAt(0).toLowerCase() + words.label.slice(1)
+      const body = full && t.failure.detail ? clip(t.failure.detail, PUSH_BODY_MAX) : words.hint
+      return {
+        kind: 'failed',
+        tag: `session:${session.id}`,
+        urgency: 'high',
+        actions: false,
+        info: { title: `${who} stopped: ${label} · ${where}`, body },
       }
     }
     default:

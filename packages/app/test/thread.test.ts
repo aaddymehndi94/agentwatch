@@ -68,3 +68,19 @@ describe('timeline: replies from the phone', () => {
     expect(items[0]).not.toHaveProperty('queued')
   })
 })
+
+describe('timeline: a turn that stopped on an error', () => {
+  it("is a line saying why, with the agent's words under it when they came", () => {
+    const items = thread(
+      [
+        { at: 1, kind: 'failed', text: 'Usage limit reached\nYou have hit your limit · resets 3:40pm' },
+        { at: 2, kind: 'failed' },
+      ],
+      session({ state: 'idle', caps: { reply: true } }),
+    )
+    expect(items).toEqual([
+      { k: 'sys', at: 1, icon: 'bad', label: 'Usage limit reached', text: 'You have hit your limit · resets 3:40pm' },
+      { k: 'sys', at: 2, icon: 'bad', label: 'Stopped on an error' },
+    ])
+  })
+})

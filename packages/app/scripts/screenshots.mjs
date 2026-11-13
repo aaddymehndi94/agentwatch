@@ -22,6 +22,7 @@ const SHOTS = [
   ['session-approval', '?demo#/s/laptop-a/s1'],
   ['session-reply', '?demo#/s/laptop-a/s4'],
   ['session-working', '?demo#/s/laptop-a/s3'],
+  ['session-stopped', '?demo#/s/laptop-a/s9'],
   ['settings', '?demo#/settings'],
   ['pair', '?'],
 ]

@@ -84,7 +84,7 @@ or waiting on you, every phone gets a single "offline" push.
 | `hello` | `v, host, user, privacy, allowMessages, daemonVersion, adapters` | First, on every connect. `host` and `user` are kept from the first hello only, so a source can't rename itself later |
 | `snapshot` | `sessions[], requests[]` | Right after `hello`. Open requests it doesn't list become `expired`, and missing sessions `ended`. |
 | `session` | `session` | Upsert: clear state plus `sealed` info |
-| `event` | `event {sessionId, at, kind, sealed?}` | Timeline: `prompted`, `needs_you`, `answered`, `done`, `waiting`, `ended`, `replied`, `queued` |
+| `event` | `event {sessionId, at, kind, sealed?}` | Timeline: `prompted`, `needs_you`, `answered`, `done`, `waiting`, `failed`, `ended`, `replied`, `queued` |
 | `request.open` | `request` | `kind`, `answerable`, and `sealed` info |
 | `request.close` | `requestId, status, at` | `answered`, `answered_locally`, `expired`, `cancelled` |
 | `push` | `push {tag, kind, urgency, sessionId?, requestId?, actions, sealed}`, optional `rid` | The Hub sends it as Web Push. With a `rid` it acks whether any phone got it. |
@@ -161,7 +161,8 @@ The Hub signs with VAPID (keys generated inside the Durable Object on first use)
 The service worker opens `sealed` with the vault key under the `push` binding, which covers every clear field it acts
 on. If it can't, for example on a phone that was signed out, it still shows a generic notification, because iOS
 requires every push to show something. Pushes the relay makes itself (offline, test) carry clear `title` and `body`.
-Pushes that share a `tag` replace each other. `needs_you` goes out at high urgency.
+Pushes that share a `tag` replace each other. `needs_you` and `failed` (a turn that stopped on an error) go out at
+high urgency.
 
 Android shows Approve and Deny on a notification only when the seal opened, `actions` is true, and `tag` is
 `req:<requestId>`. The daemon sets `actions` only for a permission whose whole detail fits in the notification: one

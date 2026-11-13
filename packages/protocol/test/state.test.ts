@@ -71,6 +71,32 @@ describe('session state machine', () => {
     expect(decide(done.session, done.transition!, ctx)?.kind).toBe('done')
   })
 
+  it('a turn that stops on an error is a failure, pushed however short; the next turn clears it', () => {
+    const ctx = { privacy: 'full' as const, doneMinSeconds: 30 }
+    let s = newSession('s1', 'claude', 0)
+    s = { ...s, info: { project: 'nextup' } }
+    s = reduce(s, { type: 'turn.start', at: 1_000 }).session
+    const failure = { kind: 'usage_limit' as const, detail: 'You have hit your limit · resets 3:40pm' }
+    const r = reduce(s, { type: 'turn.end', at: 4_000, failure })
+    expect(r.session.state).toBe('idle')
+    expect(r.session.info.failure).toEqual(failure)
+    expect(r.transition).toEqual({ kind: 'failed', failure, turnMs: 3_000 })
+    expect(decide(r.session, r.transition!, ctx)).toEqual({
+      kind: 'failed',
+      tag: 'session:s1',
+      urgency: 'high',
+      actions: false,
+      info: { title: 'Claude stopped: usage limit reached · nextup', body: 'You have hit your limit · resets 3:40pm' },
+    })
+    // Summary privacy: the plain next step, never the agent's own error text.
+    expect(decide(r.session, r.transition!, { ...ctx, privacy: 'summary' })!.info).toEqual({
+      title: 'Claude stopped: usage limit reached · nextup',
+      body: 'It can carry on once the limit resets.',
+    })
+    s = reduce(r.session, { type: 'turn.start', at: 9_000 }).session
+    expect(s.info.failure).toBeUndefined()
+  })
+
   it('returns to working after an answer mid-turn, and stays needs_you while another request is open', () => {
     let { s } = run([
       { type: 'turn.start', at: 1 },

@@ -6,7 +6,7 @@ import type { EventVM, SessionVM } from './model.ts'
 export type Item =
   | { k: 'you'; at: number; text: string; phone: boolean; queued?: boolean }
   | { k: 'agent'; at: number; text: string; latest: boolean }
-  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info' | 'msg'; label: string; text?: string }
+  | { k: 'sys'; at: number; icon: 'ask' | 'ok' | 'end' | 'info' | 'msg' | 'bad'; label: string; text?: string }
 
 /** A reply's prompt enters just before the daemon reports it (same text), or after the turn it queued behind. */
 const PROMPT_BEFORE_REPLY_MS = 10_000
@@ -97,6 +97,19 @@ export function thread(events: EventVM[], s: SessionVM): Item[] {
       case 'answered':
         items.push({ k: 'sys', at: e.at, icon: 'ok', label: e.text ?? 'Answered' })
         break
+      case 'failed': {
+        // "Usage limit reached\n<the agent's own error text>"; just the kind's words under summary privacy (no text).
+        const [label, ...rest] = (e.text ?? '').split('\n')
+        const detail = rest.join('\n').trim()
+        items.push({
+          k: 'sys',
+          at: e.at,
+          icon: 'bad',
+          label: label?.trim() || 'Stopped on an error',
+          ...(detail ? { text: detail } : {}),
+        })
+        break
+      }
       case 'ended':
         items.push({ k: 'sys', at: e.at, icon: 'end', label: 'Session ended' })
         break

@@ -1,7 +1,7 @@
 // The session state machine. Adapters turn agent-specific signals (Claude hooks, Codex app-server events, `emit`)
 // into AgentEvents; `reduce` folds them into a Session and reports the Transition that the notify policy reads.
 
-import type { AgentKind, Capabilities, SessionInfo, SessionState } from './wire.ts'
+import type { AgentKind, Capabilities, Failure, SessionInfo, SessionState } from './wire.ts'
 
 export interface Session {
   id: string
@@ -17,8 +17,8 @@ export interface Session {
   /** Duration of the last completed turn, ms. */
   lastTurnMs: number | null
   /**
-   * Background tasks (subagents, shells, monitors, workflows) still running after the agent's turn ended. While any
-   * are, the session is working, not idle: the agent hasn't finished, it's waiting on its own work.
+   * Subagents and workflows still running after the agent's turn ended. While any are, the session is working, not
+   * idle: the agent hasn't finished, it's waiting on its own work.
    */
   background: number
 }
@@ -28,8 +28,11 @@ export type AgentEvent =
   | { type: 'turn.start'; at: number }
   | { type: 'request.open'; at: number; requestId: string }
   | { type: 'request.close'; at: number; requestId: string }
-  /** `background`: labels of the agent's own work still running; non-empty means the job isn't finished yet. */
-  | { type: 'turn.end'; at: number; message?: string; background?: string[] }
+  /**
+   * `background`: labels of the agent's own work still running; non-empty means the job isn't finished yet.
+   * `failure`: the turn stopped on an error (a usage limit, overloaded servers…), not because the work was done.
+   */
+  | { type: 'turn.end'; at: number; message?: string; background?: string[]; failure?: Failure }
   | { type: 'session.end'; at: number }
   | { type: 'info'; at: number; info: SessionInfo }
   /** An external observation (e.g. `claude agents --json`), used to repair drift and discover sessions. */
@@ -43,6 +46,8 @@ export type Transition =
   | { kind: 'done'; turnMs: number | null }
   /** The turn ended but the agent's background work runs on: no push, nothing is asked of you yet. */
   | { kind: 'waiting'; count: number }
+  /** The turn stopped on an error: always worth a push, however short it was. */
+  | { kind: 'failed'; failure: Failure; turnMs: number | null }
   | { kind: 'ended' }
 
 export function newSession(id: string, agent: AgentKind, at: number): Session {
@@ -90,7 +95,9 @@ export function reduce(s: Session, e: AgentEvent): { session: Session; transitio
       // A turn woken by the agent's own background work continues the same job: its clock keeps running.
       const continuing = (s.background ?? 0) > 0 && s.turnStartedAt !== null
       const turnStartedAt = continuing ? s.turnStartedAt : e.at
-      const next = withState({ ...s, turnStartedAt }, s.openRequests.length ? 'needs_you' : 'working', e.at)
+      // A new turn is a fresh try: whatever stopped the last one no longer stands.
+      const { failure: _cleared, ...info } = s.info
+      const next = withState({ ...s, info, turnStartedAt }, s.openRequests.length ? 'needs_you' : 'working', e.at)
       return { session: next, transition: { kind: 'prompted' } }
     }
     case 'request.open': {
@@ -108,8 +115,24 @@ export function reduce(s: Session, e: AgentEvent): { session: Session; transitio
       }
     }
     case 'turn.end': {
-      const { background: _was, ...rest } = s.info
+      const { background: _was, failure: _old, ...rest } = s.info
       const said = e.message !== undefined ? { ...rest, snippet: e.message } : rest
+      if (e.failure) {
+        const turnMs = s.turnStartedAt !== null ? e.at - s.turnStartedAt : null
+        const next = withState(
+          {
+            ...s,
+            info: { ...said, failure: e.failure },
+            turnStartedAt: null,
+            openRequests: [],
+            lastTurnMs: turnMs,
+            background: 0,
+          },
+          'idle',
+          e.at,
+        )
+        return { session: next, transition: { kind: 'failed', failure: e.failure, turnMs } }
+      }
       if (e.background?.length) {
         const info = { ...said, background: e.background }
         const next = withState({ ...s, info, openRequests: [], background: e.background.length }, 'working', e.at)

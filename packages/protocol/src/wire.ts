@@ -28,6 +28,7 @@ export const EventKind = z.enum([
   'ended',
   'replied',
   'queued',
+  'failed',
 ])
 export type EventKind = z.infer<typeof EventKind>
 
@@ -35,6 +36,25 @@ const id = z.string().min(1).max(200)
 const ts = z.number().int().nonnegative()
 
 // ── Plaintext shapes that live inside sealed blobs ─────────────────────────────────────────────────────────────────
+
+/** Why a turn stopped short, the same for every agent. Words for each are in `failure.ts`. */
+export const FailureKind = z.enum([
+  'usage_limit',
+  'overloaded',
+  'auth',
+  'billing',
+  'context_full',
+  'output_limit',
+  'error',
+])
+export type FailureKind = z.infer<typeof FailureKind>
+
+export const Failure = z.object({
+  kind: FailureKind,
+  /** The agent's own error text (full privacy only). */
+  detail: z.string().max(500).optional(),
+})
+export type Failure = z.infer<typeof Failure>
 
 export const SessionInfo = z.object({
   title: z.string().max(300).optional(),
@@ -44,6 +64,8 @@ export const SessionInfo = z.object({
   model: z.string().max(100).optional(),
   /** What the agent is waiting on while its own background work runs ("Agent · Explore: find the hooks"). */
   background: z.array(z.string().max(200)).max(20).optional(),
+  /** The last turn stopped on an error; cleared when the next turn starts. */
+  failure: Failure.optional(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
@@ -115,7 +137,7 @@ export type RequestWire = z.infer<typeof RequestWire>
 export const EventWire = z.object({ sessionId: id, at: ts, kind: EventKind, sealed: z.string().optional() })
 export type EventWire = z.infer<typeof EventWire>
 
-export const PushKind = z.enum(['needs_you', 'done', 'offline', 'test'])
+export const PushKind = z.enum(['needs_you', 'done', 'failed', 'offline', 'test'])
 export type PushKind = z.infer<typeof PushKind>
 
 export const PushWire = z.object({

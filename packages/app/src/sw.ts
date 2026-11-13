@@ -78,7 +78,8 @@ function parsePayload(data: PushMessageData | null): PushPayload {
   return {
     v: 1,
     tag: str('tag')?.slice(0, 200) ?? 'agentwatch',
-    kind: kind === 'needs_you' || kind === 'done' || kind === 'offline' || kind === 'test' ? kind : 'test',
+    // A kind this build doesn't know stays as sent, so its seal still opens; it shows like a "done".
+    kind: kind && /^[a-z_]{1,32}$/.test(kind) ? (kind as PushPayload['kind']) : 'test',
     sourceId: str('sourceId'),
     sessionId: str('sessionId'),
     requestId: str('requestId'),
@@ -98,7 +99,14 @@ function parsePayload(data: PushMessageData | null): PushPayload {
  */
 async function describe(p: PushPayload): Promise<{ info: PushInfo; verified: boolean }> {
   const generic: PushInfo = {
-    title: p.kind === 'needs_you' ? 'An agent needs you' : p.kind === 'done' ? 'An agent finished' : 'AgentWatch',
+    title:
+      p.kind === 'needs_you'
+        ? 'An agent needs you'
+        : p.kind === 'failed'
+          ? 'An agent stopped'
+          : p.kind === 'done'
+            ? 'An agent finished'
+            : 'AgentWatch',
     body: 'Open AgentWatch to see details.',
   }
   if (!p.sealed) {
@@ -144,7 +152,8 @@ self.addEventListener('push', (event) => {
         icon: '/icons/icon-192.png',
         badge: '/icons/badge-96.png',
         data: { ...payload, actions: act },
-        requireInteraction: payload.kind === 'needs_you',
+        // Stays until you see it: something waits on you, or an agent stopped and won't carry on by itself.
+        requireInteraction: payload.kind === 'needs_you' || payload.kind === 'failed',
       }
       if (act) {
         options.actions = [

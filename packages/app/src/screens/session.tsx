@@ -12,8 +12,8 @@ import {
   type EventVM,
   projectName,
   type SessionVM,
-  STATE_LABEL,
   sessionKey,
+  shownState,
   sourceLabel,
   splitBackgroundLabel,
   vaultKey,
@@ -96,9 +96,9 @@ export function SessionScreen(props: {
         sub={
           s && (
             <>
-              <span class="orb small" data-state={s.state} aria-hidden="true" />
-              <span class="state-word" data-state={s.state}>
-                {STATE_LABEL[s.state]}
+              <span class="orb small" data-state={shownState(s).key} aria-hidden="true" />
+              <span class="state-word" data-state={shownState(s).key}>
+                {shownState(s).label}
               </span>
               <span class="sep" aria-hidden="true" />
               {agentLabel(s.agent)}
@@ -131,7 +131,7 @@ export function SessionScreen(props: {
                 <span class="sep" aria-hidden="true" />
                 {s.state === 'ended'
                   ? `Ended ${ago(s.stateSince, t)} ago`
-                  : `${STATE_LABEL[s.state]} for ${
+                  : `${shownState(s).label} for ${
                       s.state === 'working' && s.turnStartedAt ? duration(t - s.turnStartedAt) : ago(s.stateSince, t)
                     }`}
               </p>

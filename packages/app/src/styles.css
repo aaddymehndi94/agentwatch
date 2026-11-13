@@ -664,6 +664,10 @@ pre,
 .state-word[data-state="idle"] {
   color: var(--idle);
 }
+/* Stopped on an error (a usage limit, signed out…): idle, but not done. */
+.state-word[data-state="failed"] {
+  color: var(--bad);
+}
 
 /* State orbs: a ring that orbits while working, a ping while it needs you, still when idle. */
 .orb {
@@ -686,9 +690,13 @@ pre,
 .orb[data-state="idle"] {
   --orb: var(--idle);
 }
+.orb[data-state="failed"] {
+  --orb: var(--bad);
+}
 .orb[data-state="needs_you"],
 .orb[data-state="working"],
-.orb[data-state="idle"] {
+.orb[data-state="idle"],
+.orb[data-state="failed"] {
   box-shadow:
     0 0 0 4px color-mix(in oklab, var(--orb) 16%, transparent),
     0 0 16px 1px color-mix(in oklab, var(--orb) 50%, transparent);
@@ -1271,6 +1279,10 @@ pre,
   background: color-mix(in oklab, var(--ok) 15%, transparent);
   color: var(--ok);
 }
+.sys.bad .sys-icon {
+  background: color-mix(in oklab, var(--bad) 15%, transparent);
+  color: var(--bad);
+}
 .sys-main {
   display: grid;
   flex: 1;
@@ -1287,6 +1299,13 @@ pre,
   font: 12.5px / 1.5 var(--mono);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* Why a turn stopped, in the agent's words: it often ends with when to try again, so it's never cut. */
+.sys.bad .sys-text {
+  overflow: visible;
+  font: 13.5px / 1.45 var(--font);
+  white-space: normal;
+  text-wrap: pretty;
 }
 .sys time {
   color: var(--text-3);
