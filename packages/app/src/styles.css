@@ -316,6 +316,34 @@ pre,
 .icon-btn:active {
   background: color-mix(in oklab, var(--text) 11%, transparent);
 }
+/* An icon button beside the online pill wears the pill's glass, so the two read as one pair. */
+.icon-btn.round {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  /* The bar's end padding was set for a bare 44px glyph button; this lines the circle up with the 16px gutter. */
+  margin: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+  color: var(--text-2);
+}
+.icon-btn.round::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+.icon-btn.round .icon {
+  width: 18px;
+  height: 18px;
+}
+.icon-btn.round:hover {
+  background: color-mix(in oklab, var(--surface) 80%, transparent);
+  color: var(--text);
+}
+.icon-btn.round:active {
+  background: color-mix(in oklab, var(--text) 9%, var(--surface));
+}
 .pill {
   position: relative;
   display: inline-flex;

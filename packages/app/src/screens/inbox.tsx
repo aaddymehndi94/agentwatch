@@ -47,7 +47,7 @@ export function Inbox({ app, now, go }: { app: AppState; now: number; go: (hash:
                 : `${online} of ${total} online`}
           </button>
         )}
-        <button type="button" class="icon-btn" onClick={() => go('#/settings')} aria-label="Settings">
+        <button type="button" class="icon-btn round" onClick={() => go('#/settings')} aria-label="Settings">
           <Gear />
         </button>
       </TopBar>
