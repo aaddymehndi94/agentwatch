@@ -1,0 +1,192 @@
+{
+ "claudeVersion": "2.1.323",
+ "note": "SPIKE-BUSY turn; the mod called $.prompt.submit 4 s in; it resolved only when the queued prompt entered, right after Stop.",
+ "mod": [
+  {
+   "ev": "turn.start",
+   "turnId": "0080ea09-7a0f-43b8-b0e0-da0ee7e60415",
+   "text": "SPIKE-BUSY: run the shell command `sleep 25` with the Bash tool, then reply with",
+   "at": 0
+  },
+  {
+   "ev": "submit.call",
+   "at": 4035
+  },
+  {
+   "ev": "turn.complete",
+   "reason": "answer",
+   "keys": [
+    "answer",
+    "durationMs",
+    "isAborted",
+    "turnId",
+    "reason",
+    "usage"
+   ],
+   "at": 5035
+  },
+  {
+   "ev": "usage",
+   "usage": {
+    "startedAt": 1794564110587,
+    "context": {
+     "tokens": 43086,
+     "window": 1000000,
+     "percent": 4
+    },
+    "rateLimits": [
+     {
+      "kind": "five_hour",
+      "percentUsed": 23,
+      "resetsAt": "2026-11-13T14:00:00.000Z"
+     },
+     {
+      "kind": "seven_day",
+      "percentUsed": 54,
+      "resetsAt": "2026-11-16T11:00:00.000Z"
+     }
+    ],
+    "cost": {
+     "usd": 0.00427476
+    }
+   },
+   "at": 5038
+  },
+  {
+   "ev": "submit.resolved",
+   "res": {
+    "text": "SPIKE-QUEUED: reply with exactly: queued-ok",
+    "origin": {
+     "kind": "plugin",
+     "name": "awspike2",
+     "asUser": true
+    }
+   },
+   "at": 5104
+  },
+  {
+   "ev": "turn.start",
+   "turnId": "fbee4a32-4996-4362-a60c-1d086f38f393",
+   "text": "SPIKE-QUEUED: reply with exactly: queued-ok",
+   "at": 5113
+  },
+  {
+   "ev": "turn.complete",
+   "reason": "answer",
+   "keys": [
+    "answer",
+    "durationMs",
+    "isAborted",
+    "turnId",
+    "reason",
+    "usage"
+   ],
+   "at": 6083
+  },
+  {
+   "ev": "usage",
+   "usage": {
+    "startedAt": 1794564110587,
+    "context": {
+     "tokens": 43634,
+     "window": 1000000,
+     "percent": 4
+    },
+    "rateLimits": [
+     {
+      "kind": "five_hour",
+      "percentUsed": 23,
+      "resetsAt": "2026-11-13T14:00:00.000Z"
+     },
+     {
+      "kind": "seven_day",
+      "percentUsed": 54,
+      "resetsAt": "2026-11-16T11:00:00.000Z"
+     }
+    ],
+    "cost": {
+     "usd": 0.00543414
+    }
+   },
+   "at": 6099
+  }
+ ],
+ "hooks": [
+  {
+   "at": -4883,
+   "payload": {
+    "session_id": "34a55702-23e0-42fd-b30b-9378371210f3",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3.jsonl",
+    "cwd": "/home/dev/agentwatch/spikes/claude/work",
+    "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3/scratchpad",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-haiku-5-5"
+   }
+  },
+  {
+   "at": -26,
+   "payload": {
+    "session_id": "34a55702-23e0-42fd-b30b-9378371210f3",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3.jsonl",
+    "cwd": "/home/dev/agentwatch/spikes/claude/work",
+    "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3/scratchpad",
+    "prompt_id": "12312b39-268c-40e7-a0b1-bf4f994a6725",
+    "permission_mode": "auto",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "SPIKE-BUSY: run the shell command `sleep 25` with the Bash tool, then reply with exactly: busy-done"
+   }
+  },
+  {
+   "at": 5018,
+   "payload": {
+    "session_id": "34a55702-23e0-42fd-b30b-9378371210f3",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3.jsonl",
+    "cwd": "/home/dev/agentwatch/spikes/claude/work",
+    "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3/scratchpad",
+    "prompt_id": "12312b39-268c-40e7-a0b1-bf4f994a6725",
+    "permission_mode": "auto",
+    "effort": {
+     "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "I couldn't run `sleep 25`. The harness blocked it as a standalone foreground sleep, and its suggested alternatives are a Monitor until-loop or `run_in_background`. I didn't chain shorter sleeps to get around the block.\n\nSo I haven't produced `busy-done`. If you want the check, tell me to run it in the background and I'll reply once it finishes.",
+    "background_tasks": [],
+    "session_crons": []
+   }
+  },
+  {
+   "at": 5097,
+   "payload": {
+    "session_id": "34a55702-23e0-42fd-b30b-9378371210f3",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3.jsonl",
+    "cwd": "/home/dev/agentwatch/spikes/claude/work",
+    "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3/scratchpad",
+    "prompt_id": "dc3a5840-3f21-4d42-8a05-b947fba44ca9",
+    "permission_mode": "auto",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "SPIKE-QUEUED: reply with exactly: queued-ok"
+   }
+  },
+  {
+   "at": 6056,
+   "payload": {
+    "session_id": "34a55702-23e0-42fd-b30b-9378371210f3",
+    "transcript_path": "/home/dev/.claude/projects/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3.jsonl",
+    "cwd": "/home/dev/agentwatch/spikes/claude/work",
+    "scratchpad_dir": "/tmp/claude-1000/-home-dev-agentwatch-spikes-claude-work/34a55702-23e0-42fd-b30b-9378371210f3/scratchpad",
+    "prompt_id": "dc3a5840-3f21-4d42-8a05-b947fba44ca9",
+    "permission_mode": "auto",
+    "effort": {
+     "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "queued-ok",
+    "background_tasks": [],
+    "session_crons": []
+   }
+  }
+ ]
+}
